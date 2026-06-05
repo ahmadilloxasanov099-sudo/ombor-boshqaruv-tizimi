@@ -36,6 +36,13 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
       throw new UnauthorizedException('Refresh token yaroqsiz');
     }
 
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub, deletedAt: null, isActive: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Foydalanuvchi bloklangan yoki o\'chirilgan');
+    }
+
     return { ...payload, refreshTokenId: validToken.id };
   }
 } 

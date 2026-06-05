@@ -214,4 +214,30 @@ export class UsersService {
       },
     });
   }
+
+  async remove(id: string) {
+    await this.findOne(id);
+
+    const activeAssignments = await this.prisma.assignment.count({
+      where: { userId: id },
+    });
+
+    if (activeAssignments > 0) {
+      throw new BadRequestException(
+        'Xodimda qaytarilmagan jihozlar bor, oldin ularni qaytarib oling!',
+      );
+    }
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+
+    await this.prisma.refreshToken.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    return { message: 'Xodim muvaffaqiyatli o\'chirildi' };
+  }
 }

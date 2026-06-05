@@ -11,11 +11,11 @@ export async function generateTokens(
   const [accessToken, refreshToken] = await Promise.all([
     jwtService.signAsync(payload, {
       secret: process.env.JWT_SECRET as string,
-      expiresIn: 900,
+      expiresIn: (process.env.JWT_EXPIRES_IN || '15m') as any,
     }),
     jwtService.signAsync(payload, {
       secret: process.env.JWT_REFRESH_SECRET as string,
-      expiresIn: 2592000,
+      expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as any,
     }),
   ]);
 

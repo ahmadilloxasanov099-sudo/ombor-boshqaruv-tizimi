@@ -39,24 +39,48 @@ export class OperationsService {
 
     const existingAsset = await this.prisma.asset.findUnique({
       where: { inventoryNumber: dto.inventoryNumber },
+      include: { assignments: true },
     });
+
     if (existingAsset) {
-      throw new BadRequestException('Bu inventar raqami allaqachon mavjud');
+      if (existingAsset.productId !== dto.productId) {
+        throw new BadRequestException('Bu inventar raqami boshqa mahsulotga tegishli');
+      }
+      if (existingAsset.status !== 'ACTIVE') {
+        throw new BadRequestException('Bu jihoz faol holatda emas (singan, yo\'qolgan yoki hisobdan chiqarilgan)');
+      }
+      if (existingAsset.assignments.length > 0) {
+        throw new BadRequestException('Bu jihoz hozirda boshqa xodimga biriktirilgan');
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const asset = await tx.asset.create({
-        data: {
-          productId: dto.productId,
-          inventoryNumber: dto.inventoryNumber,
-          code: dto.inventoryNumber,
-          serialNumber: dto.serialNumber,
-          status: 'ACTIVE',
-        },
-      });
+      let assetId: string;
+
+      if (!existingAsset) {
+        const newAsset = await tx.asset.create({
+          data: {
+            productId: dto.productId,
+            inventoryNumber: dto.inventoryNumber,
+            code: dto.inventoryNumber,
+            serialNumber: dto.serialNumber,
+            status: 'ACTIVE',
+          },
+        });
+        assetId = newAsset.id;
+      } else {
+        assetId = existingAsset.id;
+        if (dto.serialNumber && existingAsset.serialNumber !== dto.serialNumber) {
+          const updated = await tx.asset.update({
+            where: { id: existingAsset.id },
+            data: { serialNumber: dto.serialNumber },
+          });
+          assetId = updated.id;
+        }
+      }
 
       await tx.assignment.create({
-        data: { userId: dto.userId, assetId: asset.id },
+        data: { userId: dto.userId, assetId },
       });
 
       await tx.inventory.update({
@@ -69,7 +93,7 @@ export class OperationsService {
           type: 'GIVE_TO_USER',
           quantity: 1,
           userId: dto.userId,
-          assetId: asset.id,
+          assetId,
           productId: dto.productId,
           performedById,
           documentNumber: dto.documentNumber,
@@ -77,7 +101,9 @@ export class OperationsService {
         },
       });
 
-      return asset;
+      return tx.asset.findUnique({
+        where: { id: assetId },
+      });
     });
   }
 
@@ -296,6 +322,9 @@ export class OperationsService {
       include: { inventory: true },
     });
     if (!product) throw new NotFoundException('Mahsulot topilmadi');
+    if (product.productType !== ProductType.SHARED) {
+      throw new BadRequestException('Faqat SHARED (umumiy foydalanishdagi) jihozlarni bo\'limdan qaytarish mumkin');
+    }
 
     const departmentAsset = await this.prisma.departmentAsset.findUnique({
       where: {

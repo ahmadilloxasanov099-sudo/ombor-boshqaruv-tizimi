@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -80,5 +81,12 @@ export class UsersController {
   @Patch(':id/status')
   toggleStatus(@Param('id') id: string) {
     return this.usersService.toggleStatus(id);
+  }
+
+  @ApiOperation({ summary: 'Xodimni o\'chirish (soft delete)' })
+  @Roles(UserRole.ADMIN)
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.usersService.remove(id);
   }
 }

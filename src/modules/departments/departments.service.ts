@@ -48,16 +48,17 @@ export class DepartmentsService {
       throw new NotFoundException("Bo'lim topilmadi");
     }
 
-    const [userCount, assetCount, consumableCount] = await Promise.all([
+    const [userCount, assetCount, consumableCount, sharedCount] = await Promise.all([
       this.prisma.user.count({
         where: { departmentId: id, deletedAt: null, isActive: true },
       }),
-      this.prisma.departmentAsset.aggregate({
+      this.prisma.assignment.count({
         where: {
-          departmentId: id,
-          product: { productType: 'ASSET' },
+          user: {
+            departmentId: id,
+            deletedAt: null,
+          },
         },
-        _sum: { quantity: true },
       }),
       this.prisma.departmentAsset.aggregate({
         where: {
@@ -80,8 +81,9 @@ export class DepartmentsService {
       name: department.name,
       code: department.code,
       userCount,
-      assetCount: assetCount._sum.quantity ?? 0,
+      assetCount,
       consumableCount: consumableCount._sum.quantity ?? 0,
+      sharedCount: sharedCount._sum.quantity ?? 0,
     };
   }
 

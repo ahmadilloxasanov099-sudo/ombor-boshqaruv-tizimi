@@ -106,11 +106,18 @@ export class AuthService {
     username: string,
     role: string,
   ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId, deletedAt: null, isActive: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Foydalanuvchi bloklangan yoki o\'chirilgan');
+    }
+
     const tokens = await generateTokens(
       this.jwtService,
-      userId,
-      username,
-      role,
+      user.id,
+      user.username,
+      user.role,
     );
 
     await this.prisma.refreshToken.update({
