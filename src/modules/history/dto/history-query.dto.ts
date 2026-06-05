@@ -1,0 +1,36 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { OperationType } from '@prisma/client';
+import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
+
+export class HistoryQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: OperationType, description: 'Operatsiya turi' })
+  @IsOptional()
+  @IsEnum(OperationType)
+  operationType?: OperationType;
+
+  @ApiPropertyOptional({ example: 'uuid', description: 'Xodim ID si' })
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
+
+  @ApiPropertyOptional({ example: 'uuid', description: 'Bo\'lim ID si' })
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @ApiPropertyOptional({ example: 'uuid', description: 'Mahsulot ID si' })
+  @IsOptional()
+  @IsUUID()
+  productId?: string;
+
+  @ApiPropertyOptional({ example: '2024-01-01', description: 'Boshlanish sanasi' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2024-12-31', description: 'Tugash sanasi' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+}
