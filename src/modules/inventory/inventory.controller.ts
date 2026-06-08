@@ -15,6 +15,7 @@ import { InventoryService } from './inventory.service';
 import { StockInDto } from './dto/stock-in.dto';
 import { SetMinLevelDto } from './dto/set-min-level.dto';
 import { CurrentUser, Roles } from '../auth';
+import { BulkStockInDto } from './dto';
 
 @ApiTags('Inventory')
 @ApiBearerAuth()
@@ -44,7 +45,7 @@ export class InventoryController {
     return this.inventoryService.findOne(productId);
   }
 
-  @ApiOperation({ summary: 'Omborga kirim qo\'shish' })
+  @ApiOperation({ summary: "Omborga kirim qo'shish" })
   @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
   @Post('stock-in')
   stockIn(@Body() dto: StockInDto, @CurrentUser() user: any) {
@@ -56,5 +57,12 @@ export class InventoryController {
   @Patch('min-level')
   setMinLevel(@Body() dto: SetMinLevelDto) {
     return this.inventoryService.setMinLevel(dto);
+  }
+
+  @ApiOperation({ summary: "Bir vaqtda ko'p mahsulot kirim qilish" })
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Post('bulk-stock-in')
+  bulkStockIn(@Body() dto: BulkStockInDto, @CurrentUser() user: any) {
+    return this.inventoryService.bulkStockIn(dto, user.id);
   }
 }

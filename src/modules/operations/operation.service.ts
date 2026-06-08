@@ -65,6 +65,7 @@ export class OperationsService {
             code: dto.inventoryNumber,
             serialNumber: dto.serialNumber,
             status: 'ACTIVE',
+            purchasePrice: product.inventory?.unitPrice ?? null,
           },
         });
         assetId = newAsset.id;
@@ -270,7 +271,7 @@ export class OperationsService {
     }
 
     if (!product.inventory || product.inventory.quantity < dto.quantity) {
-      throw new BadRequestException('Omborда yetarli miqdor yo\'q');
+      throw new BadRequestException('Ombordа yetarli miqdor yo\'q');
     }
 
     const department = await this.prisma.department.findUnique({

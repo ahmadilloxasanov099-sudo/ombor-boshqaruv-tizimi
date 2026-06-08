@@ -9,11 +9,13 @@ import { InventoryModule } from './modules/inventory';
 import { OperationsModule } from './modules/operations';
 import { HistoryModule } from './modules/history/history.module';
 import { StatsModule } from './modules/stats/stats.module';
+import { CommonModule } from './common';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    CommonModule,
     AuthModule,
     DepartmentsModule,
     UsersModule,

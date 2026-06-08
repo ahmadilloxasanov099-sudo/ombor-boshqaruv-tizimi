@@ -3,7 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { AuditAction } from '@prisma/client';
 import { PrismaService } from 'src/prisma';
+import { AuditService } from 'src/common/services/audit.service';
 import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -11,7 +13,10 @@ import { UserQueryDto } from './dto/user-query.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditService,
+  ) {}
 
   async findAll(query: UserQueryDto) {
     const { page = 1, limit = 20, search, departmentId, role } = query;
@@ -124,7 +129,7 @@ export class UsersService {
     });
   }
 
-  async create(dto: CreateUserDto) {
+  async create(dto: CreateUserDto, createdBy: string) {
     const existing = await this.prisma.user.findUnique({
       where: { username: dto.username },
     });
@@ -138,13 +143,13 @@ export class UsersService {
     });
 
     if (!department) {
-      throw new BadRequestException('Bo\'lim topilmadi');
+      throw new BadRequestException("Bo'lim topilmadi");
     }
 
     const { password, ...rest } = dto;
     const passwordHash = await bcrypt.hash(password, 10);
 
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: { ...rest, passwordHash },
       select: {
         id: true,
@@ -159,10 +164,20 @@ export class UsersService {
         createdAt: true,
       },
     });
+
+    await this.auditService.log({
+      userId: createdBy,
+      action: AuditAction.CREATE,
+      tableName: 'User',
+      recordId: user.id,
+      newData: user,
+    });
+
+    return user;
   }
 
-  async update(id: string, dto: UpdateUserDto) {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateUserDto, updatedBy: string) {
+    const oldUser = await this.findOne(id);
 
     if (dto.username) {
       const existing = await this.prisma.user.findUnique({
@@ -178,11 +193,11 @@ export class UsersService {
         where: { id: dto.departmentId },
       });
       if (!department) {
-        throw new BadRequestException('Bo\'lim topilmadi');
+        throw new BadRequestException("Bo'lim topilmadi");
       }
     }
 
-    return this.prisma.user.update({
+    const updatedUser = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: {
@@ -198,12 +213,23 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    await this.auditService.log({
+      userId: updatedBy,
+      action: AuditAction.UPDATE,
+      tableName: 'User',
+      recordId: id,
+      oldData: oldUser,
+      newData: updatedUser,
+    });
+
+    return updatedUser;
   }
 
-  async toggleStatus(id: string) {
+  async toggleStatus(id: string, updatedBy: string) {
     const user = await this.findOne(id);
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: { isActive: !user.isActive },
       select: {
@@ -213,9 +239,20 @@ export class UsersService {
         isActive: true,
       },
     });
+
+    await this.auditService.log({
+      userId: updatedBy,
+      action: AuditAction.UPDATE,
+      tableName: 'User',
+      recordId: id,
+      oldData: { isActive: user.isActive },
+      newData: { isActive: updated.isActive },
+    });
+
+    return updated;
   }
 
-  async remove(id: string) {
+  async remove(id: string, deletedBy: string) {
     await this.findOne(id);
 
     const activeAssignments = await this.prisma.assignment.count({
@@ -238,6 +275,112 @@ export class UsersService {
       data: { revokedAt: new Date() },
     });
 
-    return { message: 'Xodim muvaffaqiyatli o\'chirildi' };
+    await this.auditService.log({
+      userId: deletedBy,
+      action: AuditAction.DELETE,
+      tableName: 'User',
+      recordId: id,
+    });
+
+    return { message: "Xodim muvaffaqiyatli o'chirildi" };
+  }
+
+  async bulkReturn(id: string, performedById: string) {
+    await this.findOne(id);
+
+    const assignments = await this.prisma.assignment.findMany({
+      where: { userId: id },
+      include: { asset: true },
+    });
+
+    if (assignments.length === 0) {
+      throw new BadRequestException("Xodimda jihozlar yo'q");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const assignment of assignments) {
+        await tx.assignment.delete({
+          where: {
+            userId_assetId: { userId: id, assetId: assignment.assetId },
+          },
+        });
+
+        await tx.inventory.update({
+          where: { productId: assignment.asset.productId },
+          data: { quantity: { increment: 1 } },
+        });
+
+        await tx.operation.create({
+          data: {
+            type: 'RETURN_FROM_USER',
+            quantity: 1,
+            userId: id,
+            assetId: assignment.assetId,
+            productId: assignment.asset.productId,
+            performedById,
+            note: 'Ommaviy qaytarish',
+          },
+        });
+      }
+
+      return {
+        message: `${assignments.length} ta jihoz muvaffaqiyatli qaytarildi`,
+        count: assignments.length,
+      };
+    });
+  }
+
+  async bulkTransfer(id: string, toUserId: string, performedById: string) {
+    await this.findOne(id);
+
+    const toUser = await this.prisma.user.findUnique({
+      where: { id: toUserId, deletedAt: null },
+    });
+    if (!toUser) throw new NotFoundException('Xodim topilmadi');
+
+    if (id === toUserId) {
+      throw new BadRequestException("Bir xil xodimga o'tkazib bo'lmaydi");
+    }
+
+    const assignments = await this.prisma.assignment.findMany({
+      where: { userId: id },
+      include: { asset: true },
+    });
+
+    if (assignments.length === 0) {
+      throw new BadRequestException("Xodimda jihozlar yo'q");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const assignment of assignments) {
+        await tx.assignment.delete({
+          where: {
+            userId_assetId: { userId: id, assetId: assignment.assetId },
+          },
+        });
+
+        await tx.assignment.create({
+          data: { userId: toUserId, assetId: assignment.assetId },
+        });
+
+        await tx.operation.create({
+          data: {
+            type: 'TRANSFER_USER',
+            quantity: 1,
+            userId: toUserId,
+            fromUserId: id,
+            assetId: assignment.assetId,
+            productId: assignment.asset.productId,
+            performedById,
+            note: "Ommaviy o'tkazish",
+          },
+        });
+      }
+
+      return {
+        message: `${assignments.length} ta jihoz muvaffaqiyatli o'tkazildi`,
+        count: assignments.length,
+      };
+    });
   }
 }

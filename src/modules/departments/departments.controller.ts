@@ -13,7 +13,7 @@ import { UserRole } from '@prisma/client';
 import { DepartmentsService } from './departments.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
-import { Roles } from '../auth/decorators';
+import { CurrentUser, Roles } from '../auth/decorators';
 import { JwtAuthGuard, RolesGuard } from '../auth';
 
 @ApiTags('Departments')
@@ -47,21 +47,24 @@ export class DepartmentsController {
   @ApiOperation({ summary: "Yangi bo'lim yaratish" })
   @Roles(UserRole.ADMIN)
   @Post()
-  create(@Body() dto: CreateDepartmentDto) {
-    return this.departmentsService.create(dto);
+  create(@Body() dto: CreateDepartmentDto, @CurrentUser() user: any) {
+    return this.departmentsService.create(dto, user.id);
   }
-
   @ApiOperation({ summary: "Bo'limni tahrirlash" })
   @Roles(UserRole.ADMIN)
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateDepartmentDto) {
-    return this.departmentsService.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateDepartmentDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.departmentsService.update(id, dto, user.id);
   }
 
   @ApiOperation({ summary: "Bo'limni o'chirish" })
   @Roles(UserRole.ADMIN)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.departmentsService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.departmentsService.remove(id, user.id);
   }
 }

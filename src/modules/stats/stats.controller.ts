@@ -13,21 +13,21 @@ import { Roles } from '../auth';
 export class StatsController {
   constructor(private statsService: StatsService) {}
 
-  @ApiOperation({ summary: 'Umumiy ko\'rsatkichlar' })
+  @ApiOperation({ summary: "Umumiy ko'rsatkichlar" })
   @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
   @Get('overview')
   getOverview() {
     return this.statsService.getOverview();
   }
 
-  @ApiOperation({ summary: 'Bo\'lim bo\'yicha jihozlar' })
+  @ApiOperation({ summary: "Bo'lim bo'yicha jihozlar" })
   @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
   @Get('by-department')
   getByDepartment() {
     return this.statsService.getByDepartment();
   }
 
-  @ApiOperation({ summary: 'Mahsulot bo\'yicha sarflash' })
+  @ApiOperation({ summary: "Mahsulot bo'yicha sarflash" })
   @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
   @Get('by-product')
   getByProduct() {
@@ -46,5 +46,12 @@ export class StatsController {
   @Get('monthly')
   getMonthly() {
     return this.statsService.getMonthly();
+  }
+
+  @ApiOperation({ summary: "Xodim bo'yicha jihoz yuklamasi" })
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Get('by-user')
+  getByUser() {
+    return this.statsService.getByUser();
   }
 }

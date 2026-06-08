@@ -133,12 +133,14 @@ model Product {
 //  INVENTORY (markaziy ombor)
 
 model Inventory {
-  id String @id @default(uuid())
+  id        String @id @default(uuid())
   productId String @unique
-  quantity Int @default(0)
-  minLevel Int @default(0)
+  quantity  Int    @default(0)
+  minLevel  Int    @default(0)
+  unitPrice Decimal? @db.Decimal(12, 2)  // 1 ta narxi
+  totalValue Decimal? @db.Decimal(15, 2) // quantity × unitPrice
 
-  product Product @relation(fields: [productId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

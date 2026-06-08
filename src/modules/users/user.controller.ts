@@ -27,14 +27,14 @@ import { CurrentUser, Roles } from '../auth';
 export class UsersController {
   constructor(private usersService: UsersService) {}
 
-  @ApiOperation({ summary: 'Barcha xodimlar ro\'yxati' })
+  @ApiOperation({ summary: "Barcha xodimlar ro'yxati" })
   @Roles(UserRole.ADMIN)
   @Get()
   findAll(@Query() query: UserQueryDto) {
     return this.usersService.findAll(query);
   }
 
-  @ApiOperation({ summary: 'Bitta xodim ma\'lumoti' })
+  @ApiOperation({ summary: "Bitta xodim ma'lumoti" })
   @Roles(UserRole.ADMIN)
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -51,42 +51,60 @@ export class UsersController {
   @ApiOperation({ summary: 'Xodim tarixi' })
   @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
   @Get(':id/history')
-  getHistory(
-    @Param('id') id: string,
-    @CurrentUser() currentUser: any,
-  ) {
-    // XODIM faqat o'z tarixini ko'ra oladi
+  getHistory(@Param('id') id: string, @CurrentUser() currentUser: any) {
     if (currentUser.role === UserRole.XODIM && currentUser.id !== id) {
       id = currentUser.id;
     }
     return this.usersService.getHistory(id);
   }
 
-  @ApiOperation({ summary: 'Yangi xodim qo\'shish' })
+  @ApiOperation({ summary: "Yangi xodim qo'shish" })
   @Roles(UserRole.ADMIN)
   @Post()
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  create(@Body() dto: CreateUserDto, @CurrentUser() user: any) {
+    return this.usersService.create(dto, user.id);
   }
 
   @ApiOperation({ summary: 'Xodimni tahrirlash' })
   @Roles(UserRole.ADMIN)
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.usersService.update(id, dto, user.id);
   }
 
   @ApiOperation({ summary: 'Bloklash yoki faollashtirish' })
   @Roles(UserRole.ADMIN)
   @Patch(':id/status')
-  toggleStatus(@Param('id') id: string) {
-    return this.usersService.toggleStatus(id);
+  toggleStatus(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.usersService.toggleStatus(id, user.id);
   }
 
-  @ApiOperation({ summary: 'Xodimni o\'chirish (soft delete)' })
+  @ApiOperation({ summary: "Xodimni o'chirish (soft delete)" })
   @Roles(UserRole.ADMIN)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.usersService.remove(id, user.id);
+  }
+
+  @ApiOperation({ summary: 'Xodimdan barcha jihozlarni qaytarish' })
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Post(':id/bulk-return')
+  bulkReturn(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.usersService.bulkReturn(id, user.id);
+  }
+
+  @ApiOperation({ summary: "Barcha jihozlarni boshqa xodimga o'tkazish" })
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Post(':id/bulk-transfer')
+  bulkTransfer(
+    @Param('id') id: string,
+    @Body('toUserId') toUserId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.usersService.bulkTransfer(id, toUserId, user.id);
   }
 }

@@ -5,48 +5,60 @@ import { PrismaService } from 'src/prisma';
 export class StatsService {
   constructor(private prisma: PrismaService) {}
 
-  // ─────────────────────────────────────────────
   // Umumiy ko'rsatkichlar
-  // ─────────────────────────────────────────────
   async getOverview() {
     const [
       totalProducts,
       totalUsers,
       totalDepartments,
       totalOperations,
-      lowStockCount,
-      inventoryItems,
+      activeAssets,
+      inventories,
     ] = await Promise.all([
       this.prisma.product.count({ where: { deletedAt: null, isActive: true } }),
       this.prisma.user.count({ where: { deletedAt: null, isActive: true } }),
       this.prisma.department.count(),
       this.prisma.operation.count(),
-      this.prisma.inventory.count({
-        where: {
-          product: { deletedAt: null, isActive: true },
-        },
-      }),
+      this.prisma.assignment.count(),
       this.prisma.inventory.findMany({
-        include: { product: true },
+        where: { product: { deletedAt: null, isActive: true } },
       }),
     ]);
 
-    const lowStock = inventoryItems.filter(
-      (item) => item.quantity < item.minLevel,
+    const lowStockCount = inventories.filter(
+      (i) => i.quantity < i.minLevel,
     ).length;
+
+    // Ombordagi barcha mahsulotlarning umumiy qiymati
+    const totalInventoryValue = inventories.reduce(
+      (sum, i) => sum + Number(i.totalValue ?? 0),
+      0,
+    );
+
+    // Xodimlarga berilgan jihozlarning umumiy qiymati
+    const assignedAssets = await this.prisma.asset.findMany({
+      where: { assignments: { some: {} } },
+      select: { purchasePrice: true },
+    });
+
+    const totalAssignedValue = assignedAssets.reduce(
+      (sum, a) => sum + Number(a.purchasePrice ?? 0),
+      0,
+    );
 
     return {
       totalProducts,
       totalUsers,
       totalDepartments,
       totalOperations,
-      lowStockCount: lowStock,
+      lowStockCount,
+      activeAssets,
+      totalInventoryValue, // ← ombordagi barcha mahsulotlar qiymati
+      totalAssignedValue, // ← xodimlar bo'ynidagi umumiy qiymat
     };
   }
 
-  // ─────────────────────────────────────────────
   // Bo'lim bo'yicha jihozlar
-  // ─────────────────────────────────────────────
   async getByDepartment() {
     const departments = await this.prisma.department.findMany({
       include: {
@@ -72,9 +84,7 @@ export class StatsService {
     }));
   }
 
-  // ─────────────────────────────────────────────
   // Mahsulot bo'yicha sarflash
-  // ─────────────────────────────────────────────
   async getByProduct() {
     const operations = await this.prisma.operation.groupBy({
       by: ['productId', 'type'],
@@ -107,9 +117,7 @@ export class StatsService {
     });
   }
 
-  // ─────────────────────────────────────────────
   // Kam qolgan mahsulotlar
-  // ─────────────────────────────────────────────
   async getLowStock() {
     const items = await this.prisma.inventory.findMany({
       where: {
@@ -117,7 +125,13 @@ export class StatsService {
       },
       include: {
         product: {
-          select: { id: true, name: true, code: true, productType: true, unit: true },
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            productType: true,
+            unit: true,
+          },
         },
       },
     });
@@ -136,9 +150,7 @@ export class StatsService {
       }));
   }
 
-  // ─────────────────────────────────────────────
   // Oylik dinamika
-  // ─────────────────────────────────────────────
   async getMonthly() {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
@@ -149,7 +161,10 @@ export class StatsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const monthly: Record<string, { month: string; stockIn: number; stockOut: number }> = {};
+    const monthly: Record<
+      string,
+      { month: string; stockIn: number; stockOut: number }
+    > = {};
 
     operations.forEach((op) => {
       const month = op.createdAt.toISOString().slice(0, 7); // 2024-01
@@ -164,5 +179,58 @@ export class StatsService {
     });
 
     return Object.values(monthly);
+  }
+
+  async getByUser() {
+    const users = await this.prisma.user.findMany({
+      where: { deletedAt: null, isActive: true },
+      select: {
+        id: true,
+        fullName: true,
+        username: true,
+        position: true,
+        department: { select: { id: true, name: true } },
+        assignments: {
+          include: {
+            asset: {
+              include: {
+                product: {
+                  select: { id: true, name: true, productType: true },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { fullName: 'asc' },
+    });
+
+    return users.map((user) => {
+      const assets = user.assignments.map((a) => ({
+        assetId: a.asset.id,
+        inventoryNumber: a.asset.inventoryNumber,
+        code: a.asset.code,
+        status: a.asset.status,
+        productName: a.asset.product.name,
+        purchasePrice: a.asset.purchasePrice ?? 0,
+        assignedAt: a.createdAt,
+      }));
+
+      const totalValue = assets.reduce(
+        (sum, a) => sum + Number(a.purchasePrice),
+        0,
+      );
+
+      return {
+        id: user.id,
+        fullName: user.fullName,
+        username: user.username,
+        position: user.position,
+        department: user.department,
+        assetCount: assets.length,
+        totalValue,
+        assets,
+      };
+    });
   }
 }
