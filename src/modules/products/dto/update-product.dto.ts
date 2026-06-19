@@ -1,33 +1,33 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { UnitType } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
 
 export class UpdateProductDto {
-  @ApiPropertyOptional({ example: 'Noutbuk', description: 'Mahsulot nomi' })
+  @ApiPropertyOptional({ example: 'Noutbuk' })
   @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(100)
   name?: string;
 
-  @ApiPropertyOptional({ example: 'NB-001', description: 'Mahsulot kodi' })
+  @ApiPropertyOptional({ example: 2024 })
   @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  code?: string;
+  @IsInt()
+  @Min(1900)
+  year?: number;
 
-  @ApiPropertyOptional({ enum: UnitType, example: UnitType.PIECE, description: 'O\'lchov birligi' })
+  @ApiPropertyOptional({ enum: UnitType })
   @IsOptional()
   @IsEnum(UnitType)
   unit?: UnitType;
 
-  @ApiPropertyOptional({ example: 'Dell Latitude 5520', description: 'Tavsif' })
+  @ApiPropertyOptional({ example: 'Dell Latitude 5520' })
   @IsOptional()
   @IsString()
   @MaxLength(500)
   description?: string;
 
-  @ApiPropertyOptional({ example: 'https://...', description: 'Rasm URL' })
+  @ApiPropertyOptional({ example: 'https://...' })
   @IsOptional()
   @IsString()
   imageUrl?: string;

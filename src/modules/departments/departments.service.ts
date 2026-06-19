@@ -18,6 +18,7 @@ export class DepartmentsService {
 
   async findAll() {
     return this.prisma.department.findMany({
+      where: { deletedAt: null },
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
@@ -28,8 +29,8 @@ export class DepartmentsService {
   }
 
   async findOne(id: string) {
-    const department = await this.prisma.department.findUnique({
-      where: { id },
+    const department = await this.prisma.department.findFirst({
+      where: { id, deletedAt: null },
       include: {
         _count: {
           select: { users: true, departmentAssets: true },
@@ -45,60 +46,43 @@ export class DepartmentsService {
   }
 
   async getStats(id: string) {
-    const department = await this.prisma.department.findUnique({
-      where: { id },
+    const department = await this.prisma.department.findFirst({
+      where: { id, deletedAt: null },
     });
 
     if (!department) {
       throw new NotFoundException("Bo'lim topilmadi");
     }
 
-    const [userCount, assetCount, consumableCount, sharedCount] =
-      await Promise.all([
-        this.prisma.user.count({
-          where: { departmentId: id, deletedAt: null, isActive: true },
-        }),
-        this.prisma.assignment.count({
-          where: {
-            user: { departmentId: id, deletedAt: null },
-          },
-        }),
-        this.prisma.departmentAsset.aggregate({
-          where: {
-            departmentId: id,
-            product: { productType: 'CONSUMABLE' },
-          },
-          _sum: { quantity: true },
-        }),
-        this.prisma.departmentAsset.aggregate({
-          where: {
-            departmentId: id,
-            product: { productType: 'SHARED' },
-          },
-          _sum: { quantity: true },
-        }),
-      ]);
+    const [userCount, assetCount, sarflanadigan] = await Promise.all([
+      this.prisma.user.count({
+        where: { departmentId: id, deletedAt: null, isActive: true },
+      }),
+      this.prisma.assignment.count({
+        where: {
+          returnedAt: null,
+          user: { departmentId: id, deletedAt: null },
+        },
+      }),
+      this.prisma.departmentAsset.aggregate({
+        where: {
+          departmentId: id,
+          product: { productType: 'SARFLANADIGAN', deletedAt: null },
+        },
+        _sum: { quantity: true },
+      }),
+    ]);
 
     return {
       id: department.id,
       name: department.name,
-      code: department.code,
       userCount,
       assetCount,
-      consumableCount: consumableCount._sum.quantity ?? 0,
-      sharedCount: sharedCount._sum.quantity ?? 0,
+      sarflanadigan: sarflanadigan._sum.quantity ?? 0,
     };
   }
 
   async create(dto: CreateDepartmentDto, createdBy: string) {
-    const existing = await this.prisma.department.findUnique({
-      where: { code: dto.code },
-    });
-
-    if (existing) {
-      throw new BadRequestException("Bu kod bilan bo'lim allaqachon mavjud");
-    }
-
     const department = await this.prisma.department.create({
       data: dto,
     });
@@ -116,16 +100,6 @@ export class DepartmentsService {
 
   async update(id: string, dto: UpdateDepartmentDto, updatedBy: string) {
     const oldDepartment = await this.findOne(id);
-
-    if (dto.code) {
-      const existing = await this.prisma.department.findUnique({
-        where: { code: dto.code },
-      });
-
-      if (existing && existing.id !== id) {
-        throw new BadRequestException("Bu kod bilan bo'lim allaqachon mavjud");
-      }
-    }
 
     const updated = await this.prisma.department.update({
       where: { id },
@@ -167,7 +141,10 @@ export class DepartmentsService {
       );
     }
 
-    await this.prisma.department.delete({ where: { id } });
+    await this.prisma.department.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
 
     await this.auditService.log({
       userId: deletedBy,

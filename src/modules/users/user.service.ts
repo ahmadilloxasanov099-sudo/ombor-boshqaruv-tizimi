@@ -48,10 +48,9 @@ export class UsersService {
           role: true,
           isActive: true,
           phone: true,
-          email: true,
           position: true,
           departmentId: true,
-          department: { select: { id: true, name: true, code: true } },
+          department: { select: { id: true, name: true } },
           createdAt: true,
           updatedAt: true,
         },
@@ -69,7 +68,7 @@ export class UsersService {
   }
 
   async findOne(id: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
@@ -78,10 +77,9 @@ export class UsersService {
         role: true,
         isActive: true,
         phone: true,
-        email: true,
         position: true,
         departmentId: true,
-        department: { select: { name: true, code: true } },
+        department: { select: { id: true, name: true } },
         createdAt: true,
         updatedAt: true,
       },
@@ -98,17 +96,17 @@ export class UsersService {
     await this.findOne(id);
 
     return this.prisma.assignment.findMany({
-      where: { userId: id },
+      where: { userId: id, returnedAt: null },
       include: {
         asset: {
           include: {
             product: {
-              select: { id: true, name: true, code: true, productType: true },
+              select: { id: true, name: true, productType: true },
             },
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { assignedAt: 'desc' },
     });
   }
 
@@ -120,8 +118,8 @@ export class UsersService {
         OR: [{ userId: id }, { fromUserId: id }, { performedById: id }],
       },
       include: {
-        product: { select: { id: true, name: true, code: true } },
-        asset: { select: { id: true, code: true, inventoryNumber: true } },
+        product: { select: { id: true, name: true } },
+        asset: { select: { id: true, inventoryNumber: true } },
         department: { select: { id: true, name: true } },
         performedBy: { select: { id: true, fullName: true, username: true } },
       },
@@ -138,8 +136,8 @@ export class UsersService {
       throw new BadRequestException('Bu username allaqachon mavjud');
     }
 
-    const department = await this.prisma.department.findUnique({
-      where: { id: dto.departmentId },
+    const department = await this.prisma.department.findFirst({
+      where: { id: dto.departmentId, deletedAt: null },
     });
 
     if (!department) {
@@ -158,7 +156,6 @@ export class UsersService {
         role: true,
         isActive: true,
         phone: true,
-        email: true,
         position: true,
         departmentId: true,
         createdAt: true,
@@ -189,8 +186,8 @@ export class UsersService {
     }
 
     if (dto.departmentId) {
-      const department = await this.prisma.department.findUnique({
-        where: { id: dto.departmentId },
+      const department = await this.prisma.department.findFirst({
+        where: { id: dto.departmentId, deletedAt: null },
       });
       if (!department) {
         throw new BadRequestException("Bo'lim topilmadi");
@@ -207,7 +204,6 @@ export class UsersService {
         role: true,
         isActive: true,
         phone: true,
-        email: true,
         position: true,
         departmentId: true,
         updatedAt: true,
@@ -256,7 +252,7 @@ export class UsersService {
     await this.findOne(id);
 
     const activeAssignments = await this.prisma.assignment.count({
-      where: { userId: id },
+      where: { userId: id, returnedAt: null },
     });
 
     if (activeAssignments > 0) {
@@ -289,7 +285,7 @@ export class UsersService {
     await this.findOne(id);
 
     const assignments = await this.prisma.assignment.findMany({
-      where: { userId: id },
+      where: { userId: id, returnedAt: null },
       include: { asset: true },
     });
 
@@ -299,10 +295,9 @@ export class UsersService {
 
     return this.prisma.$transaction(async (tx) => {
       for (const assignment of assignments) {
-        await tx.assignment.delete({
-          where: {
-            userId_assetId: { userId: id, assetId: assignment.assetId },
-          },
+        await tx.assignment.update({
+          where: { id: assignment.id },
+          data: { returnedAt: new Date() },
         });
 
         await tx.inventory.update({
@@ -333,7 +328,7 @@ export class UsersService {
   async bulkTransfer(id: string, toUserId: string, performedById: string) {
     await this.findOne(id);
 
-    const toUser = await this.prisma.user.findUnique({
+    const toUser = await this.prisma.user.findFirst({
       where: { id: toUserId, deletedAt: null },
     });
     if (!toUser) throw new NotFoundException('Xodim topilmadi');
@@ -343,7 +338,7 @@ export class UsersService {
     }
 
     const assignments = await this.prisma.assignment.findMany({
-      where: { userId: id },
+      where: { userId: id, returnedAt: null },
       include: { asset: true },
     });
 
@@ -353,10 +348,9 @@ export class UsersService {
 
     return this.prisma.$transaction(async (tx) => {
       for (const assignment of assignments) {
-        await tx.assignment.delete({
-          where: {
-            userId_assetId: { userId: id, assetId: assignment.assetId },
-          },
+        await tx.assignment.update({
+          where: { id: assignment.id },
+          data: { returnedAt: new Date() },
         });
 
         await tx.assignment.create({

@@ -4,12 +4,12 @@ import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
 
 export class ProductQueryDto extends PaginationDto {
-  @ApiPropertyOptional({ example: 'Noutbuk', description: 'Nom yoki kod bo\'yicha qidiruv' })
+  @ApiPropertyOptional({ example: 'Noutbuk' })
   @IsOptional()
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ enum: ProductType, description: 'Mahsulot turi bo\'yicha filtri' })
+  @ApiPropertyOptional({ enum: ProductType })
   @IsOptional()
   @IsEnum(ProductType)
   productType?: ProductType;

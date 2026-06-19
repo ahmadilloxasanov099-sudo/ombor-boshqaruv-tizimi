@@ -10,7 +10,6 @@ export class HistoryService {
     const { page = 1, limit = 20, operationType, userId, departmentId, productId, from, to } = query;
     const skip = (page - 1) * limit;
 
-    // XODIM faqat o'z tarixini ko'ra oladi
     const targetUserId = currentUserRole === 'XODIM' ? currentUserId : userId;
 
     const where: any = {
@@ -41,11 +40,11 @@ export class HistoryService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          product: { select: { id: true, name: true, code: true, productType: true } },
-          asset: { select: { id: true, code: true, inventoryNumber: true } },
+          product: { select: { id: true, name: true, productType: true } },
+          asset: { select: { id: true, inventoryNumber: true } },
           user: { select: { id: true, fullName: true, username: true } },
           fromUser: { select: { id: true, fullName: true, username: true } },
-          department: { select: { id: true, name: true, code: true } },
+          department: { select: { id: true, name: true } },
           performedBy: { select: { id: true, fullName: true, username: true } },
         },
       }),

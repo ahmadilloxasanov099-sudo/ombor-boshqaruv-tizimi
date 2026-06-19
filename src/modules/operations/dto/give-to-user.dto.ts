@@ -2,29 +2,29 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class GiveToUserDto {
-  @ApiProperty({ example: 'uuid', description: 'Xodim ID si' })
+  @ApiProperty({ example: 'uuid' })
   @IsUUID()
   userId: string;
 
-  @ApiProperty({ example: 'uuid', description: 'Mahsulot ID si' })
+  @ApiProperty({ example: 'uuid' })
   @IsUUID()
   productId: string;
 
-  @ApiProperty({ example: 'INV-2024-001', description: 'Inventar raqami' })
+  @ApiProperty({ example: 'INV-2024-001' })
   @IsString()
   inventoryNumber: string;
 
-  @ApiPropertyOptional({ example: 'PF2X0001', description: 'Seriya raqami' })
+  @ApiPropertyOptional({ example: 'PF2X0001' })
   @IsOptional()
   @IsString()
   serialNumber?: string;
 
-  @ApiPropertyOptional({ example: 'AKT-2024-001', description: 'Hujjat raqami' })
+  @ApiPropertyOptional({ example: 'AKT-2024-001' })
   @IsOptional()
   @IsString()
   documentNumber?: string;
 
-  @ApiPropertyOptional({ example: 'Yangi xodimga berildi', description: 'Izoh' })
+  @ApiPropertyOptional({ example: 'Yangi xodimga berildi' })
   @IsOptional()
   @IsString()
   note?: string;

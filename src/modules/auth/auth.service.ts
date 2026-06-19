@@ -110,7 +110,9 @@ export class AuthService {
       where: { id: userId, deletedAt: null, isActive: true },
     });
     if (!user) {
-      throw new UnauthorizedException('Foydalanuvchi bloklangan yoki o\'chirilgan');
+      throw new UnauthorizedException(
+        "Foydalanuvchi bloklangan yoki o'chirilgan",
+      );
     }
 
     const tokens = await generateTokens(

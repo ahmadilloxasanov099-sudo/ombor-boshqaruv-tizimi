@@ -4,7 +4,6 @@ import {
   Delete,
   Get,
   Param,
-  Post,
   Put,
   Query,
   UseGuards,
@@ -13,7 +12,6 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { ProductsService } from './product.service';
@@ -52,13 +50,6 @@ export class ProductsController {
   @Get(':id/history')
   getHistory(@Param('id') id: string) {
     return this.productsService.getHistory(id);
-  }
-
-  @ApiOperation({ summary: "Yangi mahsulot qo'shish" })
-  @Roles(UserRole.ADMIN)
-  @Post()
-  create(@Body() dto: CreateProductDto, @CurrentUser() user: any) {
-    return this.productsService.create(dto, user.id);
   }
 
   @ApiOperation({ summary: 'Mahsulotni tahrirlash' })

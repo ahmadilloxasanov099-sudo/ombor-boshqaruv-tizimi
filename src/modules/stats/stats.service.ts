@@ -5,7 +5,6 @@ import { PrismaService } from 'src/prisma';
 export class StatsService {
   constructor(private prisma: PrismaService) {}
 
-  // Umumiy ko'rsatkichlar
   async getOverview() {
     const [
       totalProducts,
@@ -15,13 +14,13 @@ export class StatsService {
       activeAssets,
       inventories,
     ] = await Promise.all([
-      this.prisma.product.count({ where: { deletedAt: null, isActive: true } }),
+      this.prisma.product.count({ where: { deletedAt: null } }),
       this.prisma.user.count({ where: { deletedAt: null, isActive: true } }),
-      this.prisma.department.count(),
+      this.prisma.department.count({ where: { deletedAt: null } }),
       this.prisma.operation.count(),
-      this.prisma.assignment.count(),
+      this.prisma.assignment.count({ where: { returnedAt: null } }),
       this.prisma.inventory.findMany({
-        where: { product: { deletedAt: null, isActive: true } },
+        where: { product: { deletedAt: null } },
       }),
     ]);
 
@@ -29,15 +28,13 @@ export class StatsService {
       (i) => i.quantity < i.minLevel,
     ).length;
 
-    // Ombordagi barcha mahsulotlarning umumiy qiymati
     const totalInventoryValue = inventories.reduce(
       (sum, i) => sum + Number(i.totalValue ?? 0),
       0,
     );
 
-    // Xodimlarga berilgan jihozlarning umumiy qiymati
     const assignedAssets = await this.prisma.asset.findMany({
-      where: { assignments: { some: {} } },
+      where: { assignments: { some: { returnedAt: null } }, deletedAt: null },
       select: { purchasePrice: true },
     });
 
@@ -53,14 +50,14 @@ export class StatsService {
       totalOperations,
       lowStockCount,
       activeAssets,
-      totalInventoryValue, // ← ombordagi barcha mahsulotlar qiymati
-      totalAssignedValue, // ← xodimlar bo'ynidagi umumiy qiymat
+      totalInventoryValue,
+      totalAssignedValue,
     };
   }
 
-  // Bo'lim bo'yicha jihozlar
   async getByDepartment() {
     const departments = await this.prisma.department.findMany({
+      where: { deletedAt: null },
       include: {
         _count: { select: { users: true } },
         departmentAssets: {
@@ -74,7 +71,6 @@ export class StatsService {
     return departments.map((dept) => ({
       id: dept.id,
       name: dept.name,
-      code: dept.code,
       userCount: dept._count.users,
       assets: dept.departmentAssets.map((da) => ({
         productName: da.product.name,
@@ -84,7 +80,6 @@ export class StatsService {
     }));
   }
 
-  // Mahsulot bo'yicha sarflash
   async getByProduct() {
     const operations = await this.prisma.operation.groupBy({
       by: ['productId', 'type'],
@@ -101,14 +96,13 @@ export class StatsService {
       const productOps = operations.filter((op) => op.productId === product.id);
       const totalOut = productOps
         .filter((op) =>
-          ['GIVE_TO_USER', 'GIVE_TO_DEPT', 'ASSIGN_TO_DEPT'].includes(op.type),
+          ['GIVE_TO_USER', 'GIVE_TO_DEPT'].includes(op.type),
         )
         .reduce((sum, op) => sum + (op._sum.quantity ?? 0), 0);
 
       return {
         id: product.id,
         name: product.name,
-        code: product.code,
         productType: product.productType,
         currentStock: product.inventory?.quantity ?? 0,
         minLevel: product.inventory?.minLevel ?? 0,
@@ -117,18 +111,16 @@ export class StatsService {
     });
   }
 
-  // Kam qolgan mahsulotlar
   async getLowStock() {
     const items = await this.prisma.inventory.findMany({
       where: {
-        product: { deletedAt: null, isActive: true },
+        product: { deletedAt: null },
       },
       include: {
         product: {
           select: {
             id: true,
             name: true,
-            code: true,
             productType: true,
             unit: true,
           },
@@ -141,7 +133,6 @@ export class StatsService {
       .map((item) => ({
         productId: item.productId,
         name: item.product.name,
-        code: item.product.code,
         productType: item.product.productType,
         unit: item.product.unit,
         quantity: item.quantity,
@@ -150,7 +141,6 @@ export class StatsService {
       }));
   }
 
-  // Oylik dinamika
   async getMonthly() {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
@@ -161,13 +151,10 @@ export class StatsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const monthly: Record<
-      string,
-      { month: string; stockIn: number; stockOut: number }
-    > = {};
+    const monthly: Record<string, { month: string; stockIn: number; stockOut: number }> = {};
 
     operations.forEach((op) => {
-      const month = op.createdAt.toISOString().slice(0, 7); // 2024-01
+      const month = op.createdAt.toISOString().slice(0, 7);
       if (!monthly[month]) {
         monthly[month] = { month, stockIn: 0, stockOut: 0 };
       }
@@ -191,6 +178,7 @@ export class StatsService {
         position: true,
         department: { select: { id: true, name: true } },
         assignments: {
+          where: { returnedAt: null },
           include: {
             asset: {
               include: {
@@ -209,11 +197,10 @@ export class StatsService {
       const assets = user.assignments.map((a) => ({
         assetId: a.asset.id,
         inventoryNumber: a.asset.inventoryNumber,
-        code: a.asset.code,
         status: a.asset.status,
         productName: a.asset.product.name,
         purchasePrice: a.asset.purchasePrice ?? 0,
-        assignedAt: a.createdAt,
+        assignedAt: a.assignedAt,
       }));
 
       const totalValue = assets.reduce(

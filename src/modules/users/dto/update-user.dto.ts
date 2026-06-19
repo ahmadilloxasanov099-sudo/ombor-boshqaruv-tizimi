@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import {
-  IsEmail,
   IsEnum,
   IsOptional,
   IsString,
@@ -10,41 +9,36 @@ import {
 } from 'class-validator';
 
 export class UpdateUserDto {
-  @ApiPropertyOptional({ example: 'Alisher Karimov', description: 'To\'liq ism' })
+  @ApiPropertyOptional({ example: 'Alisher Karimov' })
   @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(100)
   fullName?: string;
 
-  @ApiPropertyOptional({ example: 'alisher01', description: 'Foydalanuvchi nomi' })
+  @ApiPropertyOptional({ example: 'alisher01' })
   @IsOptional()
   @IsString()
   @MinLength(3)
   @MaxLength(50)
   username?: string;
 
-  @ApiPropertyOptional({ enum: UserRole, example: UserRole.XODIM, description: 'Rol' })
+  @ApiPropertyOptional({ enum: UserRole, example: UserRole.XODIM })
   @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;
 
-  @ApiPropertyOptional({ example: 'uuid', description: 'Bo\'lim ID si' })
+  @ApiPropertyOptional({ example: 'uuid' })
   @IsOptional()
   @IsString()
   departmentId?: string;
 
-  @ApiPropertyOptional({ example: '+998901234567', description: 'Telefon raqami' })
+  @ApiPropertyOptional({ example: '+998901234567' })
   @IsOptional()
   @IsString()
   phone?: string;
 
-  @ApiPropertyOptional({ example: 'alisher@example.com', description: 'Email' })
-  @IsOptional()
-  @IsEmail()
-  email?: string;
-
-  @ApiPropertyOptional({ example: 'Bosh mutaxassis', description: 'Lavozim' })
+  @ApiPropertyOptional({ example: 'Bosh mutaxassis' })
   @IsOptional()
   @IsString()
   @MaxLength(100)
