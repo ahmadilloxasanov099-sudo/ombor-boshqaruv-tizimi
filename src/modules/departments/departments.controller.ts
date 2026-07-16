@@ -6,10 +6,12 @@ import {
   Param,
   Post,
   Put,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+import * as express from 'express';
 import { DepartmentsService } from './departments.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
@@ -28,6 +30,19 @@ export class DepartmentsController {
   @Get()
   findAll() {
     return this.departmentsService.findAll();
+  }
+
+  @ApiOperation({ summary: "Bo'limlarni Excel (CSV) formatida eksport qilish" })
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
+  @Get('export')
+  async exportCsv(@Res() res: express.Response) {
+    const csvContent = await this.departmentsService.exportCsv();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=bolimlar.csv',
+    );
+    return res.status(200).send(csvContent);
   }
 
   @ApiOperation({ summary: "Bitta bo'lim" })

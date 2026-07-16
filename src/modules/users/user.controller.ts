@@ -8,10 +8,12 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+import * as express from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -32,6 +34,19 @@ export class UsersController {
   @Get()
   findAll(@Query() query: UserQueryDto) {
     return this.usersService.findAll(query);
+  }
+
+  @ApiOperation({ summary: 'Xodimlarni Excel (CSV) formatida eksport qilish' })
+  @Roles(UserRole.ADMIN, UserRole.KADR)
+  @Get('export')
+  async exportCsv(@Query() query: UserQueryDto, @Res() res: express.Response) {
+    const csvContent = await this.usersService.exportCsv(query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=xodimlar.csv',
+    );
+    return res.status(200).send(csvContent);
   }
 
   @ApiOperation({ summary: "Bitta xodim ma'lumoti" })

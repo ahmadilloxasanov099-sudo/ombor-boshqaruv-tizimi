@@ -14,6 +14,8 @@ import { ReturnFromDeptDto } from './dto/return-from-dept.dto';
 import { WriteOffDto } from './dto/writeoff.dto';
 import { AssignToDeptDto } from './dto/assign-to-dept.dto';
 import { MailService } from '../nodemailer/mail.service';
+import { t } from 'src/common';
+import { I18nContext } from 'nestjs-i18n';
 
 @Injectable()
 export class OperationsService {
@@ -766,20 +768,24 @@ export class OperationsService {
     });
 
     if (!operation) {
-      throw new NotFoundException('Operatsiya topilmadi');
+      throw new NotFoundException(t('errors.OPERATION_NOT_FOUND', {}, 'Operatsiya topilmadi'));
     }
 
-    const dateStr = operation.createdAt.toLocaleDateString('uz-UZ', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    const lang = I18nContext.current()?.lang || 'uz';
+    const dateStr = operation.createdAt.toLocaleDateString(
+      lang === 'uz' ? 'uz-UZ' : lang === 'ru' ? 'ru-RU' : 'en-US',
+      {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      },
+    );
 
-    let actTitle = 'QABUL QILISH - TOPSHIRISH DALOLATNOMASI';
-    let giverTitle = 'Topshirdi (Mas’ul shaxs)';
-    let receiverTitle = 'Qabul qildi';
+    let actTitle = t('pdf.title_give_user', {}, 'QABUL QILISH - TOPSHIRISH DALOLATNOMASI');
+    let giverTitle = t('pdf.role_giver_give', {}, 'Topshirdi (Mas’ul shaxs)');
+    let receiverTitle = t('pdf.role_receiver_give', {}, 'Qabul qildi');
     
-    let giverName = operation.performedBy?.fullName || 'Ombor mudiri';
+    let giverName = operation.performedBy?.fullName || t('pdf.giver_default_name', {}, 'Ombor mudiri');
     let receiverName = '';
     let departmentName = '';
 
@@ -787,30 +793,37 @@ export class OperationsService {
       receiverName = operation.user?.fullName || '';
       departmentName = operation.user?.department?.name || '';
     } else if (operation.type === 'RETURN_FROM_USER') {
-      actTitle = 'JIHOZNI OMBORGA QAYTARISH DALOLATNOMASI';
-      giverTitle = 'Topshirdi (Xodim)';
-      receiverTitle = 'Qabul qildi (Ombor mudiri)';
+      actTitle = t('pdf.title_return_user', {}, 'JIHOZNI OMBORGA QAYTARISH DALOLATNOMASI');
+      giverTitle = t('pdf.role_giver_return', {}, 'Topshirdi (Xodim)');
+      receiverTitle = t('pdf.role_receiver_return', {}, 'Qabul qildi (Ombor mudiri)');
       giverName = operation.user?.fullName || '';
-      receiverName = operation.performedBy?.fullName || 'Ombor mudiri';
+      receiverName = operation.performedBy?.fullName || t('pdf.giver_default_name', {}, 'Ombor mudiri');
       departmentName = operation.user?.department?.name || '';
     } else if (operation.type === 'ASSIGN_TO_DEPT' || operation.type === 'GIVE_TO_DEPT') {
-      receiverName = 'Bo‘lim mas’ul vakili';
+      receiverName = t('pdf.receiver_default_name', {}, 'Bo‘lim mas’ul vakili');
       departmentName = operation.department?.name || '';
     } else if (operation.type === 'RETURN_FROM_DEPT') {
-      actTitle = 'BO‘LIMDAN OMBORGA QAYTARISH DALOLATNOMASI';
-      giverTitle = 'Topshirdi (Bo‘lim)';
-      receiverTitle = 'Qabul qildi (Ombor mudiri)';
+      actTitle = t('pdf.title_return_dept', {}, 'BO‘LIMDAN OMBORGA QAYTARISH DALOLATNOMASI');
+      giverTitle = t('pdf.role_giver_dept_return', {}, 'Topshirdi (Bo‘lim)');
+      receiverTitle = t('pdf.role_receiver_dept_return', {}, 'Qabul qildi (Ombor mudiri)');
       giverName = operation.department?.name || '';
-      receiverName = operation.performedBy?.fullName || 'Ombor mudiri';
+      receiverName = operation.performedBy?.fullName || t('pdf.giver_default_name', {}, 'Ombor mudiri');
     } else if (operation.type === 'WRITE_OFF') {
-      actTitle = 'JIHOZ / MATERIALNI HISOBDAN CHIQARISH DALOLATNOMASI';
-      giverTitle = 'Tasdiqladi (Admin)';
-      receiverTitle = 'Hisobdan chiqarildi (Utilizatsiya)';
-      giverName = operation.performedBy?.fullName || 'Tizim Administratori';
-      receiverName = 'Ombor hisobidan o‘chirildi';
+      actTitle = t('pdf.title_write_off', {}, 'JIHOZ / MATERIALNI HISOBDAN CHIQARISH DALOLATNOMASI');
+      giverTitle = t('pdf.role_giver_write_off', {}, 'Tasdiqladi (Admin)');
+      receiverTitle = t('pdf.role_receiver_write_off', {}, 'Hisobdan chiqarildi (Utilizatsiya)');
+      giverName = operation.performedBy?.fullName || t('pdf.admin_default_name', {}, 'Tizim Administratori');
+      receiverName = t('pdf.write_off_location', {}, 'Ombor hisobidan o‘chirildi');
     }
 
     const docNum = operation.documentNumber || `DAL-${operation.id.slice(0, 8).toUpperCase()}`;
+    const deptText = departmentName ? `(${t('pdf.dept_label', {}, 'Bo\'lim')}: ${departmentName})` : '';
+
+    const descriptionText = t('pdf.description_give', {
+      giverName,
+      receiverName,
+      deptText,
+    }, `Ushbu dalolatnoma bir tomondan topshiruvchi <strong>${giverName}</strong>, ikkinchi tomondan qabul qiluvchi <strong>${receiverName}</strong> ${deptText} o'rtasida tuzildi. Mazkur hujjat orqali quyidagi tovar-moddiy boyliklar (TMB) rasmiylashtirildi:`);
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -894,48 +907,45 @@ export class OperationsService {
       </head>
       <body>
         <div class="header">
-          <h2>TASHKILOT OMBOR TIZIMI (WMS)</h2>
+          <h2>${t('pdf.system_title', {}, 'TASHKILOT OMBOR TIZIMI (WMS)')}</h2>
           <h2 style="margin-top: 5px;">${actTitle}</h2>
         </div>
 
         <table class="doc-meta">
           <tr>
-            <td><strong>Hujjat №:</strong> ${docNum}</td>
-            <td class="text-right"><strong>Sana:</strong> ${dateStr}</td>
+            <td><strong>${t('pdf.doc_number', {}, 'Hujjat №')}:</strong> ${docNum}</td>
+            <td class="text-right"><strong>${t('pdf.date', {}, 'Sana')}:</strong> ${dateStr}</td>
           </tr>
         </table>
 
         <div class="content-text">
-          Ushbu dalolatnoma bir tomondan topshiruvchi <strong>${giverName}</strong>, 
-          ikkinchi tomondan qabul qiluvchi <strong>${receiverName}</strong> ${departmentName ? `(Bo'lim: ${departmentName})` : ''} 
-          o'rtasida tuzildi. Mazkur hujjat orqali quyidagi tovar-moddiy boyliklar (TMB) rasmiylashtirildi:
+          ${descriptionText}
         </div>
 
-        <div class="table-title">Topshirilgan Tovar-Moddiy Boyliklar ro'yxati:</div>
+        <div class="table-title">${t('pdf.table_title', {}, 'Topshirilgan Tovar-Moddiy Boyliklar ro\'yxati:')}</div>
         <table class="items">
           <thead>
             <tr>
-              <th style="width: 5%;">№</th>
-              <th style="width: 45%;">Mahsulot nomi</th>
-              <th style="width: 20%;">Inventar raqami</th>
-              <th style="width: 15%;">Seriya raqami</th>
-              <th style="width: 15%;">Soni (O'lchov)</th>
+              <th style="width: 5%;">${t('pdf.col_no', {}, '№')}</th>
+              <th style="width: 45%;">${t('pdf.col_name', {}, 'Mahsulot nomi')}</th>
+              <th style="width: 20%;">${t('pdf.col_inv', {}, 'Inventar raqami')}</th>
+              <th style="width: 15%;">${t('pdf.col_serial', {}, 'Seriya raqami')}</th>
+              <th style="width: 15%;">${t('pdf.col_qty', {}, 'Soni (O\'lchov)')}</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td class="center">1</td>
-              <td>${operation.product?.name || 'Noma‘lum mahsulot'}</td>
+              <td>${operation.product?.name || t('pdf.unknown_product', {}, 'Noma‘lum mahsulot')}</td>
               <td>${operation.asset?.inventoryNumber || '—'}</td>
               <td>${operation.asset?.serialNumber || '—'}</td>
-              <td class="center">${operation.quantity} ${operation.product?.unit || 'ta'}</td>
+              <td class="center">${operation.quantity} ${operation.product?.unit || t('pdf.unit_ta', {}, 'ta')}</td>
             </tr>
           </tbody>
         </table>
 
         <div class="content-text" style="margin-top: 20px;">
-          Topshirilgan tovar-moddiy boyliklar to'liq holatda, soz, butun va talabga javob beradigan darajada topshirildi.
-          Tomonlarning bir-biriga nisbatan e'tirozlari mavjud emas.
+          ${t('pdf.footer_text', {}, 'Topshirilgan tovar-moddiy boyliklar to‘liq holatda, soz, butun va talabga javob beradigan darajada topshirildi. Tomonlarning bir-biriga nisbatan e‘tirozlari mavjud emas.')}
         </div>
 
         <table class="signatures">
@@ -943,14 +953,14 @@ export class OperationsService {
             <td>
               <strong>${giverTitle}:</strong>
               <div class="sig-line">
-                (imzo, sana)<br><br>
+                (${t('pdf.signature_label', {}, 'imzo, sana')})<br><br>
                 <strong>${giverName}</strong>
               </div>
             </td>
             <td>
               <strong>${receiverTitle}:</strong>
               <div class="sig-line">
-                (imzo, sana)<br><br>
+                (${t('pdf.signature_label', {}, 'imzo, sana')})<br><br>
                 <strong>${receiverName}</strong>
               </div>
             </td>

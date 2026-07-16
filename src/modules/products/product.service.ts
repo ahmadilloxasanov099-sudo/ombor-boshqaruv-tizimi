@@ -8,6 +8,7 @@ import { PrismaService } from 'src/prisma';
 import { AuditService } from 'src/common/services/audit.service';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
+import { t } from 'src/common';
 
 @Injectable()
 export class ProductsService {
@@ -71,7 +72,7 @@ export class ProductsService {
     });
 
     if (!product) {
-      throw new NotFoundException('Mahsulot topilmadi');
+      throw new NotFoundException(t('errors.PRODUCT_NOT_FOUND', {}, 'Mahsulot topilmadi'));
     }
 
     return product;
@@ -108,13 +109,13 @@ export class ProductsService {
       include: { inventory: true },
     });
     if (!product) {
-      throw new NotFoundException('Mahsulot topilmadi');
+      throw new NotFoundException(t('errors.PRODUCT_NOT_FOUND', {}, 'Mahsulot topilmadi'));
     }
 
     // 1. Ombordagi qoldiqni tekshirish
     if (product.inventory && product.inventory.quantity > 0) {
       throw new BadRequestException(
-        "Mahsulot omborda mavjud, o'chirib bo'lmaydi",
+        t('errors.PRODUCT_IN_STOCK', {}, "Mahsulot omborda mavjud, o'chirib bo'lmaydi"),
       );
     }
 
@@ -123,8 +124,9 @@ export class ProductsService {
       where: { productId: id, deletedAt: null },
     });
     if (activeAssets > 0) {
+      // FIX: was `throw new Error(...)` which bypassed HttpExceptionFilter and returned 500
       throw new BadRequestException(
-        "Mahsulotda aktiv jihozlar bor, o'chirib bo'lmaydi",
+        t('errors.ACTIVE_ASSETS_EXIST', {}, "Mahsulotda aktiv jihozlar bor, o'chirib bo'lmaydi"),
       );
     }
 
@@ -135,7 +137,7 @@ export class ProductsService {
     });
     if (activeDeptAssets._sum.quantity && activeDeptAssets._sum.quantity > 0) {
       throw new BadRequestException(
-        "Ushbu mahsulot bo'limlarda mavjud, o'chirib bo'lmaydi",
+        t('errors.PRODUCT_IN_DEPTS', {}, "Ushbu mahsulot bo'limlarda mavjud, o'chirib bo'lmaydi"),
       );
     }
 

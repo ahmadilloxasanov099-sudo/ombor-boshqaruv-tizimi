@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserQueryDto } from './dto/user-query.dto';
+import { t } from 'src/common';
 
 @Injectable()
 export class UsersService {
@@ -86,7 +87,7 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Xodim topilmadi');
+      throw new NotFoundException(t('errors.USER_NOT_FOUND', {}, 'Xodim topilmadi'));
     }
 
     return user;
@@ -133,7 +134,7 @@ export class UsersService {
     });
 
     if (existing) {
-      throw new BadRequestException('Bu username allaqachon mavjud');
+      throw new BadRequestException(t('errors.ALREADY_EXISTS', {}, 'Bu username allaqachon mavjud'));
     }
 
     const department = await this.prisma.department.findFirst({
@@ -181,7 +182,7 @@ export class UsersService {
         where: { username: dto.username },
       });
       if (existing && existing.id !== id) {
-        throw new BadRequestException('Bu username allaqachon mavjud');
+        throw new BadRequestException(t('errors.ALREADY_EXISTS', {}, 'Bu username allaqachon mavjud'));
       }
     }
 
@@ -393,5 +394,70 @@ export class UsersService {
         count: assignments.length,
       };
     });
+  }
+
+  async exportCsv(query: UserQueryDto) {
+    const { search, departmentId, role } = query;
+
+    const where = {
+      deletedAt: null,
+      ...(search && {
+        OR: [
+          { fullName: { contains: search, mode: 'insensitive' as const } },
+          { username: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }),
+      ...(departmentId && { departmentId }),
+      ...(role && { role }),
+    };
+
+    const users = await this.prisma.user.findMany({
+      where,
+      orderBy: { fullName: 'asc' },
+      include: {
+        department: { select: { name: true } },
+        assignments: {
+          where: { returnedAt: null },
+        },
+      },
+    });
+
+    const headers = [
+      'Ism-sharif',
+      'Foydalanuvchi nomi (Username)',
+      'Roli',
+      'Bo‘lim',
+      'Lavozim',
+      'Telefon',
+      'Holati',
+      'Jihozlar soni',
+    ];
+
+    const csvRows = [headers.join(',')];
+
+    for (const u of users) {
+      const roleText =
+        u.role === 'ADMIN'
+          ? 'Administrator'
+          : u.role === 'OMBORCHI'
+            ? 'Omborchi'
+            : u.role === 'KADR'
+              ? 'Kadr'
+              : 'Xodim';
+      const statusText = u.isActive ? 'Faol' : 'Bloklangan';
+      const row = [
+        `"${u.fullName.replace(/"/g, '""')}"`,
+        `"${u.username.replace(/"/g, '""')}"`,
+        `"${roleText}"`,
+        `"${u.department.name.replace(/"/g, '""')}"`,
+        u.position ? `"${u.position.replace(/"/g, '""')}"` : '',
+        u.phone ? `"${u.phone.replace(/"/g, '""')}"` : '',
+        `"${statusText}"`,
+        u.assignments.length,
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    return '\ufeff' + csvRows.join('\n');
   }
 }

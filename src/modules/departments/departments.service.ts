@@ -8,6 +8,7 @@ import { PrismaService } from 'src/prisma';
 import { AuditService } from 'src/common/services/audit.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto';
+import { t } from 'src/common';
 
 @Injectable()
 export class DepartmentsService {
@@ -64,7 +65,7 @@ export class DepartmentsService {
     });
 
     if (!department) {
-      throw new NotFoundException("Bo'lim topilmadi");
+      throw new NotFoundException(t('errors.DEPARTMENT_NOT_FOUND', {}, "Bo'lim topilmadi"));
     }
 
     return department;
@@ -76,7 +77,7 @@ export class DepartmentsService {
     });
 
     if (!department) {
-      throw new NotFoundException("Bo'lim topilmadi");
+      throw new NotFoundException(t('errors.DEPARTMENT_NOT_FOUND', {}, "Bo'lim topilmadi"));
     }
 
     const [userCount, assetCount, sarflanadigan] = await Promise.all([
@@ -113,7 +114,7 @@ export class DepartmentsService {
     });
 
     if (existing) {
-      throw new BadRequestException("Bu nomdagi bo'lim allaqachon mavjud");
+      throw new BadRequestException(t('errors.DEPT_EXISTS', {}, "Bu nomdagi bo'lim allaqachon mavjud"));
     }
 
     const department = await this.prisma.department.create({
@@ -140,7 +141,7 @@ export class DepartmentsService {
       });
 
       if (existing && existing.id !== id) {
-        throw new BadRequestException("Bu nomdagi bo'lim allaqachon mavjud");
+        throw new BadRequestException(t('errors.DEPT_EXISTS', {}, "Bu nomdagi bo'lim allaqachon mavjud"));
       }
     }
 
@@ -170,7 +171,7 @@ export class DepartmentsService {
 
     if (userCount > 0) {
       throw new BadRequestException(
-        "Bo'limda xodimlar mavjud, o'chirib bo'lmaydi",
+        t('errors.DEPT_HAS_USERS', {}, "Bo'limda xodimlar mavjud, o'chirib bo'lmaydi"),
       );
     }
 
@@ -184,7 +185,7 @@ export class DepartmentsService {
 
     if (assetCount > 0) {
       throw new BadRequestException(
-        "Bo'limda jihozlar mavjud, o'chirib bo'lmaydi",
+        t('errors.DEPT_HAS_ASSETS', {}, "Bo'limda jihozlar mavjud, o'chirib bo'lmaydi"),
       );
     }
 
@@ -205,5 +206,47 @@ export class DepartmentsService {
 
       return { message: "Bo'lim muvaffaqiyatli o'chirildi" };
     });
+  }
+
+  async exportCsv() {
+    const departments = await this.prisma.department.findMany({
+      where: { deletedAt: null },
+      orderBy: { name: 'asc' },
+      include: {
+        users: {
+          where: { deletedAt: null, isActive: true },
+        },
+        departmentAssets: {
+          where: { product: { deletedAt: null } },
+        },
+        assignments: {
+          where: { returnedAt: null },
+        },
+      },
+    });
+
+    const headers = [
+      'Bo‘lim nomi',
+      'Tavsif',
+      'Xodimlar soni',
+      'Sarflanadigan materiallar miqdori',
+      'Biriktirilgan jihozlar (Shared) soni',
+    ];
+
+    const csvRows = [headers.join(',')];
+
+    for (const d of departments) {
+      const sarflanadiganQty = d.departmentAssets.reduce((sum, da) => sum + da.quantity, 0);
+      const row = [
+        `"${d.name.replace(/"/g, '""')}"`,
+        d.description ? `"${d.description.replace(/"/g, '""')}"` : '',
+        d.users.length,
+        sarflanadiganQty,
+        d.assignments.length,
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    return '\ufeff' + csvRows.join('\n');
   }
 }
