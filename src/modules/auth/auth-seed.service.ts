@@ -10,7 +10,9 @@ export class AuthSeedService implements OnApplicationBootstrap {
   constructor(private readonly prisma: PrismaService) {}
 
   async onApplicationBootstrap() {
-    this.logger.log('Sistemani dastlabki ma’lumotlar bilan tekshirish boshlandi...');
+    this.logger.log(
+      'Sistemani dastlabki ma’lumotlar bilan tekshirish boshlandi...',
+    );
 
     try {
       // 1. Bo'lim mavjudligini tekshirish yoki yaratish
@@ -78,9 +80,14 @@ export class AuthSeedService implements OnApplicationBootstrap {
         }
       }
 
-      this.logger.log('Dastlabki ma’lumotlarni tekshirish muvaffaqiyatli yakunlandi. ✅');
+      this.logger.log(
+        'Dastlabki ma’lumotlarni tekshirish muvaffaqiyatli yakunlandi. ✅',
+      );
     } catch (error) {
-      this.logger.error('Dastlabki ma’lumotlarni yaratishda xatolik yuz berdi:', error);
+      this.logger.error(
+        'Dastlabki ma’lumotlarni yaratishda xatolik yuz berdi:',
+        error,
+      );
     }
   }
 }

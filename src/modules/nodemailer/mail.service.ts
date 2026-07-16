@@ -46,7 +46,11 @@ export class MailService {
   }
 
   // Chiroyli ko'rinishdagi HTML zaxira ogohlantirish shabloni
-  async sendLowStockAlert(productName: string, currentStock: number, minLevel: number) {
+  async sendLowStockAlert(
+    productName: string,
+    currentStock: number,
+    minLevel: number,
+  ) {
     const emailTo = process.env.MAIL_USER;
     if (!emailTo) return;
 

@@ -10,10 +10,7 @@ import { RolesGuard } from './guards/roles.guard';
 import { AuthSeedService } from './auth-seed.service';
 
 @Module({
-  imports: [
-    PassportModule,
-    JwtModule.register({}),
-  ],
+  imports: [PassportModule, JwtModule.register({})],
   controllers: [AuthController],
   providers: [
     AuthService,

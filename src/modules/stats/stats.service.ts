@@ -38,7 +38,7 @@ export class StatsService {
 
     // Real-time calculation from actual quantity and unitPrice
     const totalInventoryValue = inventories.reduce(
-      (sum, i) => sum + (Number(i.quantity) * Number(i.unitPrice ?? 0)),
+      (sum, i) => sum + Number(i.quantity) * Number(i.unitPrice ?? 0),
       0,
     );
 
@@ -54,10 +54,12 @@ export class StatsService {
 
     const totalWriteOffCount = writeOffs.length;
     const totalWriteOffLoss = writeOffs.reduce((sum, op) => {
-      const price = op.asset?.purchasePrice 
-        ? Number(op.asset.purchasePrice) 
-        : (op.product?.inventory?.unitPrice ? Number(op.product.inventory.unitPrice) : 0);
-      return sum + (Number(op.quantity) * price);
+      const price = op.asset?.purchasePrice
+        ? Number(op.asset.purchasePrice)
+        : op.product?.inventory?.unitPrice
+          ? Number(op.product.inventory.unitPrice)
+          : 0;
+      return sum + Number(op.quantity) * price;
     }, 0);
 
     return {
@@ -201,7 +203,10 @@ export class StatsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const monthly: Record<string, { month: string; stockIn: number; stockOut: number }> = {};
+    const monthly: Record<
+      string,
+      { month: string; stockIn: number; stockOut: number }
+    > = {};
 
     operations.forEach((op) => {
       const month = op.createdAt.toISOString().slice(0, 7);
@@ -220,12 +225,28 @@ export class StatsService {
 
   async getComparison() {
     const now = new Date();
-    
+
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const thisMonthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
 
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    const lastMonthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
 
     const [thisMonthOps, lastMonthOps] = await Promise.all([
       this.prisma.operation.findMany({
@@ -257,16 +278,20 @@ export class StatsService {
       let writeOffValue = 0;
 
       ops.forEach((op) => {
-        const unitPrice = op.asset?.purchasePrice 
-          ? Number(op.asset.purchasePrice) 
-          : (op.product?.inventory?.unitPrice ? Number(op.product.inventory.unitPrice) : 0);
+        const unitPrice = op.asset?.purchasePrice
+          ? Number(op.asset.purchasePrice)
+          : op.product?.inventory?.unitPrice
+            ? Number(op.product.inventory.unitPrice)
+            : 0;
 
         const opValue = Number(op.quantity) * unitPrice;
 
         if (op.type === 'STOCK_IN') {
           stockInQty += op.quantity;
           stockInValue += opValue;
-        } else if (['GIVE_TO_USER', 'GIVE_TO_DEPT', 'ASSIGN_TO_DEPT'].includes(op.type)) {
+        } else if (
+          ['GIVE_TO_USER', 'GIVE_TO_DEPT', 'ASSIGN_TO_DEPT'].includes(op.type)
+        ) {
           stockOutQty += op.quantity;
           stockOutValue += opValue;
         } else if (op.type === 'WRITE_OFF') {
@@ -301,22 +326,34 @@ export class StatsService {
         totalOperations: {
           thisMonth: thisMonth.totalOperations,
           lastMonth: lastMonth.totalOperations,
-          changePercent: getPercentageChange(thisMonth.totalOperations, lastMonth.totalOperations),
+          changePercent: getPercentageChange(
+            thisMonth.totalOperations,
+            lastMonth.totalOperations,
+          ),
         },
         stockInValue: {
           thisMonth: thisMonth.stockInValue,
           lastMonth: lastMonth.stockInValue,
-          changePercent: getPercentageChange(thisMonth.stockInValue, lastMonth.stockInValue),
+          changePercent: getPercentageChange(
+            thisMonth.stockInValue,
+            lastMonth.stockInValue,
+          ),
         },
         stockOutValue: {
           thisMonth: thisMonth.stockOutValue,
           lastMonth: lastMonth.stockOutValue,
-          changePercent: getPercentageChange(thisMonth.stockOutValue, lastMonth.stockOutValue),
+          changePercent: getPercentageChange(
+            thisMonth.stockOutValue,
+            lastMonth.stockOutValue,
+          ),
         },
         writeOffValue: {
           thisMonth: thisMonth.writeOffValue,
           lastMonth: lastMonth.writeOffValue,
-          changePercent: getPercentageChange(thisMonth.writeOffValue, lastMonth.writeOffValue),
+          changePercent: getPercentageChange(
+            thisMonth.writeOffValue,
+            lastMonth.writeOffValue,
+          ),
         },
       },
     };

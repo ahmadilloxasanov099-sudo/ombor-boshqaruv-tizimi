@@ -1,4 +1,3 @@
-
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ProductType, UnitType } from '@prisma/client';
 import {
@@ -78,7 +77,8 @@ export class StockInDto {
 
   @ApiPropertyOptional({
     example: ['INV-1001', 'INV-1002'],
-    description: 'Faqat BERILADIGAN mahsulotlar uchun inventar raqamlari ro‘yxati',
+    description:
+      'Faqat BERILADIGAN mahsulotlar uchun inventar raqamlari ro‘yxati',
   })
   @IsOptional()
   @IsString({ each: true })

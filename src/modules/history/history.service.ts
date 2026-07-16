@@ -6,7 +6,11 @@ import { HistoryQueryDto } from './dto/history-query.dto';
 export class HistoryService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(query: HistoryQueryDto, currentUserId: string, currentUserRole: string) {
+  async findAll(
+    query: HistoryQueryDto,
+    currentUserId: string,
+    currentUserRole: string,
+  ) {
     const {
       page = 1,
       limit = 20,
@@ -73,8 +77,21 @@ export class HistoryService {
     };
   }
 
-  async exportCsv(query: HistoryQueryDto, currentUserId: string, currentUserRole: string): Promise<string> {
-    const { operationType, userId, departmentId, productId, assetId, inventoryNumber, from, to } = query;
+  async exportCsv(
+    query: HistoryQueryDto,
+    currentUserId: string,
+    currentUserRole: string,
+  ): Promise<string> {
+    const {
+      operationType,
+      userId,
+      departmentId,
+      productId,
+      assetId,
+      inventoryNumber,
+      from,
+      to,
+    } = query;
 
     const targetUserId = currentUserRole === 'XODIM' ? currentUserId : userId;
 
@@ -133,12 +150,22 @@ export class HistoryService {
         item.createdAt.toISOString(),
         item.type,
         item.product?.name ? `"${item.product.name.replace(/"/g, '""')}"` : '',
-        item.asset?.inventoryNumber ? `"${item.asset.inventoryNumber.replace(/"/g, '""')}"` : '',
+        item.asset?.inventoryNumber
+          ? `"${item.asset.inventoryNumber.replace(/"/g, '""')}"`
+          : '',
         item.quantity,
-        item.fromUser?.fullName ? `"${item.fromUser.fullName.replace(/"/g, '""')}"` : '',
-        item.user?.fullName ? `"${item.user.fullName.replace(/"/g, '""')}"` : '',
-        item.department?.name ? `"${item.department.name.replace(/"/g, '""')}"` : '',
-        item.performedBy?.fullName ? `"${item.performedBy.fullName.replace(/"/g, '""')}"` : '',
+        item.fromUser?.fullName
+          ? `"${item.fromUser.fullName.replace(/"/g, '""')}"`
+          : '',
+        item.user?.fullName
+          ? `"${item.user.fullName.replace(/"/g, '""')}"`
+          : '',
+        item.department?.name
+          ? `"${item.department.name.replace(/"/g, '""')}"`
+          : '',
+        item.performedBy?.fullName
+          ? `"${item.performedBy.fullName.replace(/"/g, '""')}"`
+          : '',
       ];
       csvRows.push(row.join(','));
     }

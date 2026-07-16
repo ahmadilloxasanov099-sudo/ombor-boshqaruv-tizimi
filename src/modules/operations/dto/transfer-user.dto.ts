@@ -14,12 +14,15 @@ export class TransferUserDto {
   @IsUUID()
   assetId: string;
 
-  @ApiPropertyOptional({ example: 'AKT-2024-003', description: 'Hujjat raqami' })
+  @ApiPropertyOptional({
+    example: 'AKT-2024-003',
+    description: 'Hujjat raqami',
+  })
   @IsOptional()
   @IsString()
   documentNumber?: string;
 
-  @ApiPropertyOptional({ example: 'Bo\'lim o\'zgardi', description: 'Izoh' })
+  @ApiPropertyOptional({ example: "Bo'lim o'zgardi", description: 'Izoh' })
   @IsOptional()
   @IsString()
   note?: string;

@@ -87,7 +87,7 @@ erDiagram
 
 ---
 
-## 🚀 API Endpointlar Ro'yxati (Jami: 48 ta)
+## 🚀 API Endpointlar Ro'yxati (Jami: 49 ta)
 
 Base URL: `/api/v1`
 
@@ -116,7 +116,7 @@ Rol belgilari:
 ### 3. USERS Moduli (9 ta)
 * `GET /users` `[A, K]` — Barcha xodimlar ro'yxati (qidiruv, bo'lim bo'yicha filtr).
 * `GET /users/:id` `[A, K]` — Bitta xodim ma'lumoti.
-* `GET /users/:id/assignments` `[A, AO, K]` — Xodimdi hozirda mavjud barcha faol jihozlari.
+* `GET /users/:id/assignments` `[A, AO, K]` — Xodimning hozirda mavjud barcha faol jihozlari.
 * `GET /users/:id/history` `[A, AO, K]` — Xodimning amallar tarixi.
 * `POST /users` `[A]` — Yangi xodim qo'shish.
 * `PUT /users/:id` `[A]` — Xodim ma'lumotlarini tahrirlash.
@@ -136,7 +136,7 @@ Rol belgilari:
 
 ### 5. INVENTORY Moduli (6 ta)
 * `GET /inventory` `[A, AO, K]` — Barcha ombor qoldiqlari holati.
-* `GET /inventory/low-stock` `[A, AO]` — Minimal darajadan past qoldiqlar.
+* `GET /inventory/low-stock` `[A, AO]` — Minimal ogohlantirish qoldiqlari.
 * `GET /inventory/export` `[A, AO, K]` — Ombor joriy qoldig'i va jihozlar biriktiruvini Excel (CSV) formatida yuklab olish.
 * `GET /inventory/:productId` `[A, AO, K]` — Bitta mahsulot ombor qoldig'i.
 * `PATCH /inventory/min-level` `[A, AO]` — Minimal ogohlantirish darajasini belgilash.
@@ -159,6 +159,7 @@ Rol belgilari:
   * Body: `{ departmentId, productId, quantity?, assetId?, documentNumber?, note? }`
 * `POST /operations/write-off` `[A]` — Jihoz yoki materialni hisobdan chiqarish (spisanie).
   * Body: `{ productId?, assetId?, quantity?, documentNumber?, note? }`
+* `GET /operations/:id/pdf` `[A, AO, K]` — Operatsiya qabul-topshirish dalolatnomasini (PDF) yuklab olish.
 
 ### 7. HISTORY Moduli (2 ta)
 * `GET /history` `[A, AO, K]` — Filtrlar bo'yicha to'liq amallar tarixi.
@@ -175,7 +176,7 @@ Rol belgilari:
 
 ---
 
-## 🔒 Rol Ruxsatlari Jadvali (Rollar bo'yicha cheklovlar)
+## 🔒 Rol Ruxsatlari Jadvali
 
 | Endpoint | ADMIN | OMBORCHI | KADR | XODIM |
 | :--- | :---: | :---: | :---: | :---: |
@@ -194,40 +195,98 @@ Rol belgilari:
 | `POST /inventory/bulk-stock-in` | ✅ | ✅ | ❌ | ❌ |
 | `POST /operations/*` | ✅ | ✅ | ❌ | ❌ |
 | `POST /operations/write-off` | ✅ | ❌ | ❌ | ❌ |
+| `GET /operations/:id/pdf` | ✅ | ✅ | ✅ | ❌ |
 | `GET /history` | ✅ | ✅ | ✅ | ❌ |
 | `GET /history/export` | ✅ | ✅ | ✅ | ❌ |
 | `GET /stats/*` | ✅ | ✅ | ❌ | ❌ |
 
 ---
 
-## ⚙️ Loyihani Ishga Tushirish
+## 🎛️ Tizim Sozlamalari (Environment Variables)
 
-1. **Atrof-muhit o'zgaruvchilarini sozlang (`.env`):**
-   Root papkada `.env` faylini quyidagicha to'ldiring:
-   ```env
-   APP_PORT=4000
-   DATABASE_URL="postgresql://postgres:user@localhost:5432/skladcontrol?schema=public"
-   JWT_SECRET="strong-secret-key"
-   JWT_REFRESH_SECRET="strong-refresh-secret-key"
-   MAIL_USER="your-email@gmail.com"
-   MAIL_PASSWORD="gmail-app-password"
-   ```
+Loyihani sozlash uchun `.env` faylida quyidagi o'zgaruvchilardan foydalaniladi:
 
-2. **Zarur paketlarni o'rnating:**
+| O'zgaruvchi | Turi | Standart Qiymat | Tavsif |
+| :--- | :---: | :--- | :--- |
+| `APP_PORT` | `number` | `4000` | NestJS ilovasi eshitadigan port. |
+| `DATABASE_URL` | `string` | `postgresql://...` | PostgreSQL bazasiga ulanish satri (Prisma orqali). |
+| `JWT_SECRET` | `string` | `"your-secret"` | Access JWT tokenlarni imzolash uchun kalit. |
+| `JWT_REFRESH_SECRET`| `string` | `"your-secret"` | Refresh JWT tokenlarni imzolash uchun kalit. |
+| `MAIL_USER` | `string` | `""` | Nodemailer SMTP (Gmail) foydalanuvchi emaili. |
+| `MAIL_PASSWORD` | `string` | `""` | Gmail App Password (SMTP shifrlangan maxsus parol). |
+| `ALLOWED_ORIGINS` | `string` | `http://localhost:5173` | CORS ruxsat etilgan frontend domenlari ro'yxati. |
+
+---
+
+## 🐳 Docker & Konteynerlashtirish (Docker Deployment)
+
+Loyiha to'liq Docker-ready holatiga keltirilgan. Bazani va backend ilovasini bir joyda ishga tushirish uchun Docker Compose dan foydalanish mumkin:
+
+1. **Docker yordamida loyihani ishga tushirish:**
    ```bash
-   npm install
+   docker-compose up -d --build
    ```
-
-3. **Prisma orqali bazani sinxronlang va migratsiyalarni ishga tushiring:**
+2. **Konteynerlar holatini tekshirish:**
    ```bash
-   npx prisma migrate dev
+   docker-compose ps
    ```
-
-4. **Loyihani ishga tushiring:**
+3. **Loglarni ko'rish:**
    ```bash
-   npm run start:dev
+   docker-compose logs -f
    ```
-   Loyiha ishga tushganda bazada avtomatik tarzda `admin/admin123` (`ADMIN`), `omborchi/omborchi123` (`OMBORCHI`) va `kadr/kadr123` (`KADR`) foydalanuvchilari avtomatik tarzda yaratiladi (seeding).
 
-5. **Swagger hujjatlarini ko'rish:**
-   Brauzer orqali `http://localhost:4000/docs` manziliga kiring.
+---
+
+## 🧪 Testlash (Testing Guide)
+
+Tizimdagi biznes logikani testlash uchun unit va e2e testlar o'rin olgan:
+
+* **Barcha unit testlarni ishga tushirish:**
+  ```bash
+  npm run test
+  ```
+* **Test qamrovini (test coverage) tekshirish:**
+  ```bash
+  npm run test:cov
+  ```
+* **End-to-End (E2E) integratsiya testlarini boshlash:**
+  ```bash
+  npm run test:e2e
+  ```
+
+---
+
+## 📊 Foydali Boshqaruv Buyruqlari (Prisma CLI)
+
+* **Prisma Studio (Bazada jadvallarni vizual ko'rish):**
+  ```bash
+  npx prisma studio
+  ```
+* **Yangi ma'lumotlar sxemasi o'zgarganda migratsiya yaratish:**
+  ```bash
+  npx prisma migrate dev --name <migration_nomi>
+  ```
+* **Bazani tozalash va qayta seed qilish:**
+  ```bash
+  npx prisma migrate reset
+  ```
+
+---
+
+## 💼 PM2 yordamida Productionda ishga tushirish
+
+Production muhitida Node.js ilovasining barqaror ishlashi va fon rejimida boshqarish uchun PM2 dan foydalanish tavsiya etiladi:
+
+1. **Loyihani build qilish:**
+   ```bash
+   npm run build
+   ```
+2. **Ilovani PM2 orqali boshlash:**
+   ```bash
+   pm2 start dist/main.js --name "skladcontrol-backend"
+   ```
+3. **PM2 loglari va holati:**
+   ```bash
+   pm2 status
+   pm2 logs "skladcontrol-backend"
+   ```

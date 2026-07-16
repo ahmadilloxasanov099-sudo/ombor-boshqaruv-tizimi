@@ -10,7 +10,10 @@ export class ReturnFromUserDto {
   @IsUUID()
   assetId: string;
 
-  @ApiPropertyOptional({ example: 'AKT-2024-002', description: 'Hujjat raqami' })
+  @ApiPropertyOptional({
+    example: 'AKT-2024-002',
+    description: 'Hujjat raqami',
+  })
   @IsOptional()
   @IsString()
   documentNumber?: string;

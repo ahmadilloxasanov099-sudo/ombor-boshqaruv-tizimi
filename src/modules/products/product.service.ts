@@ -57,7 +57,12 @@ export class ProductsService {
       where: { id, deletedAt: null },
       include: {
         inventory: {
-          select: { quantity: true, minLevel: true, unitPrice: true, totalValue: true },
+          select: {
+            quantity: true,
+            minLevel: true,
+            unitPrice: true,
+            totalValue: true,
+          },
         },
         _count: {
           select: { assets: true },
@@ -79,7 +84,9 @@ export class ProductsService {
       where: { id },
       data: dto,
       include: {
-        inventory: { select: { quantity: true, minLevel: true, unitPrice: true } },
+        inventory: {
+          select: { quantity: true, minLevel: true, unitPrice: true },
+        },
       },
     });
 

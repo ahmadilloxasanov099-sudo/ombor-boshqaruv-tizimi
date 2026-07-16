@@ -43,7 +43,9 @@ export class DepartmentsService {
         },
         departmentAssets: {
           include: {
-            product: { select: { id: true, name: true, productType: true, unit: true } },
+            product: {
+              select: { id: true, name: true, productType: true, unit: true },
+            },
           },
         },
         assignments: {
@@ -51,7 +53,9 @@ export class DepartmentsService {
           include: {
             asset: {
               include: {
-                product: { select: { id: true, name: true, productType: true } },
+                product: {
+                  select: { id: true, name: true, productType: true },
+                },
               },
             },
           },
@@ -158,7 +162,7 @@ export class DepartmentsService {
   }
 
   async remove(id: string, deletedBy: string) {
-    const department = await this.findOne(id);
+    await this.findOne(id);
 
     const userCount = await this.prisma.user.count({
       where: { departmentId: id, deletedAt: null },

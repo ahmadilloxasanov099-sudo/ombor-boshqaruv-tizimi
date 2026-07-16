@@ -38,7 +38,10 @@ export class InventoryController {
   async exportCsv(@Res() res: express.Response) {
     const csvContent = await this.inventoryService.exportCsv();
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename=ombor_qoldiqlari.csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=ombor_qoldiqlari.csv',
+    );
     return res.status(200).send(csvContent);
   }
 

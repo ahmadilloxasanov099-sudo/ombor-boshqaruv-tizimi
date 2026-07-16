@@ -28,7 +28,9 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
     });
 
     if (!dbToken || dbToken.revokedAt || dbToken.expiresAt < new Date()) {
-      throw new UnauthorizedException('Refresh token yaroqsiz yoki muddati o\'tgan');
+      throw new UnauthorizedException(
+        "Refresh token yaroqsiz yoki muddati o'tgan",
+      );
     }
 
     const match = await bcrypt.compare(refreshToken, dbToken.tokenHash);
@@ -40,12 +42,11 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
       where: { id: payload.sub, deletedAt: null, isActive: true },
     });
     if (!user) {
-      throw new UnauthorizedException('Foydalanuvchi bloklangan yoki o\'chirilgan');
+      throw new UnauthorizedException(
+        "Foydalanuvchi bloklangan yoki o'chirilgan",
+      );
     }
 
     return { ...payload, refreshTokenId: dbToken.id };
   }
-} 
-
- 
-
+}

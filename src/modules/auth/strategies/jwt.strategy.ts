@@ -34,7 +34,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
 
     if (!user || !user.isActive || user.deletedAt) {
-      throw new UnauthorizedException('Foydalanuvchi bloklangan yoki o\'chirilgan');
+      throw new UnauthorizedException(
+        "Foydalanuvchi bloklangan yoki o'chirilgan",
+      );
     }
 
     return user;

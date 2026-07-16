@@ -29,4 +29,3 @@ import { MailModule } from './modules/nodemailer/mail.module';
   ],
 })
 export class AppModule {}
-

@@ -90,12 +90,7 @@ export class AuthService {
     return { message: "Parol muvaffaqiyatli o'zgartirildi" };
   }
 
-  async refresh(
-    userId: string,
-    refreshTokenId: string,
-    username: string,
-    role: string,
-  ) {
+  async refresh(userId: string, refreshTokenId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId, deletedAt: null, isActive: true },
     });

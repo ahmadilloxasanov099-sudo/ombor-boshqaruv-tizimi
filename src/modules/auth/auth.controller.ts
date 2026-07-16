@@ -31,12 +31,7 @@ export class AuthController {
   @Post('refresh')
   refresh(@Req() req: any) {
     const user = req.user;
-    return this.authService.refresh(
-      user.sub,
-      user.refreshTokenId,
-      user.username,
-      user.role,
-    );
+    return this.authService.refresh(user.sub, user.refreshTokenId);
   }
 
   @ApiOperation({ summary: 'Tizimdan chiqish' })

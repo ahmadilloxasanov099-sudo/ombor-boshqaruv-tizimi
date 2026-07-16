@@ -21,7 +21,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       if (exception.code === 'P2002') {
         // Unique constraint violation
-        const fields = (exception.meta?.target as string[])?.join(', ') ?? 'field';
+        const fields =
+          (exception.meta?.target as string[])?.join(', ') ?? 'field';
         return response.status(HttpStatus.CONFLICT).json({
           success: false,
           error: 'Conflict',
@@ -57,7 +58,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     // Handle any other unhandled errors
-    this.logger.error('Unhandled exception', exception instanceof Error ? exception.stack : String(exception));
+    this.logger.error(
+      'Unhandled exception',
+      exception instanceof Error ? exception.stack : String(exception),
+    );
 
     return response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,

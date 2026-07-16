@@ -29,9 +29,16 @@ export class HistoryController {
     @CurrentUser() user: any,
     @Res() res: express.Response,
   ) {
-    const csvContent = await this.historyService.exportCsv(query, user.id, user.role);
+    const csvContent = await this.historyService.exportCsv(
+      query,
+      user.id,
+      user.role,
+    );
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename=amallar_tarixi.csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=amallar_tarixi.csv',
+    );
     return res.status(200).send(csvContent);
   }
 }

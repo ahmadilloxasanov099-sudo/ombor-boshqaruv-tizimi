@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class AssignToDeptDto {
-  @ApiProperty({ example: 'uuid', description: 'Bo\'lim ID si' })
+  @ApiProperty({ example: 'uuid', description: "Bo'lim ID si" })
   @IsUUID()
   departmentId: string;
 
@@ -14,17 +14,23 @@ export class AssignToDeptDto {
   @IsString()
   inventoryNumber: string;
 
-  @ApiPropertyOptional({ example: 'PF2X0001', description: 'Seriya raqami (ixtiyoriy)' })
+  @ApiPropertyOptional({
+    example: 'PF2X0001',
+    description: 'Seriya raqami (ixtiyoriy)',
+  })
   @IsOptional()
   @IsString()
   serialNumber?: string;
 
-  @ApiPropertyOptional({ example: 'AKT-2024-005', description: 'Hujjat raqami' })
+  @ApiPropertyOptional({
+    example: 'AKT-2024-005',
+    description: 'Hujjat raqami',
+  })
   @IsOptional()
   @IsString()
   documentNumber?: string;
 
-  @ApiPropertyOptional({ example: 'Bo\'lim uchun printer', description: 'Izoh' })
+  @ApiPropertyOptional({ example: "Bo'lim uchun printer", description: 'Izoh' })
   @IsOptional()
   @IsString()
   note?: string;

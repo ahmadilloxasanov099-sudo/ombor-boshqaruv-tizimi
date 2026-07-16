@@ -1,4 +1,5 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, Get, Param, Res } from '@nestjs/common';
+import * as express from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -75,5 +76,18 @@ export class OperationsController {
   @Post('write-off')
   writeOff(@Body() dto: WriteOffDto, @CurrentUser() user: any) {
     return this.operationsService.writeOff(dto, user.id);
+  }
+
+  @ApiOperation({ summary: 'Operatsiya qabul-topshirish dalolatnomasini (PDF) yuklab olish' })
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
+  @Get(':id/pdf')
+  async getPdf(@Param('id') id: string, @Res() res: express.Response) {
+    const pdfBuffer = await this.operationsService.generatePdfAct(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="dalolatnoma_${id}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
   }
 }

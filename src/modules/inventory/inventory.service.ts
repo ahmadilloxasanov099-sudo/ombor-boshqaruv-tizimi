@@ -107,7 +107,10 @@ export class InventoryService {
     const allInventoryNumbers: string[] = [];
     for (const item of dto.items) {
       if (item.productType === ProductType.BERILADIGAN) {
-        if (!item.inventoryNumbers || item.inventoryNumbers.length !== item.quantity) {
+        if (
+          !item.inventoryNumbers ||
+          item.inventoryNumbers.length !== item.quantity
+        ) {
           throw new BadRequestException(
             `"${item.name}" jihozi uchun aynan ${item.quantity} ta inventar raqam yuborilishi shart!`,
           );
@@ -142,7 +145,11 @@ export class InventoryService {
     await this.prisma.$transaction(async (tx) => {
       for (const item of dto.items) {
         let product = await tx.product.findFirst({
-          where: { name: item.name, productType: item.productType, deletedAt: null },
+          where: {
+            name: item.name,
+            productType: item.productType,
+            deletedAt: null,
+          },
           include: { inventory: true },
         });
 
@@ -167,10 +174,10 @@ export class InventoryService {
           });
 
           // inventory ni qayta yuklaymiz
-          product = (await tx.product.findUnique({
+          product = await tx.product.findUnique({
             where: { id: product.id },
             include: { inventory: true },
-          })) as any;
+          });
         }
 
         const updatedInventory = await tx.inventory.update({
@@ -183,7 +190,10 @@ export class InventoryService {
         });
 
         // 2. Jihozlarni (Asset) avtomatik yaratish
-        if (item.productType === ProductType.BERILADIGAN && item.inventoryNumbers) {
+        if (
+          item.productType === ProductType.BERILADIGAN &&
+          item.inventoryNumbers
+        ) {
           for (let i = 0; i < item.inventoryNumbers.length; i++) {
             await tx.asset.create({
               data: {
@@ -269,16 +279,26 @@ export class InventoryService {
     const csvRows = [headers.join(',')];
 
     for (const product of products) {
-      const typeText = product.productType === ProductType.BERILADIGAN ? 'Jihoz (Asset)' : 'Sarflanadigan';
+      const typeText =
+        product.productType === ProductType.BERILADIGAN
+          ? 'Jihoz (Asset)'
+          : 'Sarflanadigan';
       const unitText = product.unit;
       const minLevelText = product.inventory?.minLevel ?? 0;
-      const descText = product.description ? `"${product.description.replace(/"/g, '""')}"` : '';
+      const descText = product.description
+        ? `"${product.description.replace(/"/g, '""')}"`
+        : '';
 
       // 1. Agar SARFLANADIGAN bo'lsa
       if (product.productType === ProductType.SARFLANADIGAN) {
         const warehouseQty = product.inventory?.quantity ?? 0;
-        const deptsQty = product.departmentAssets.reduce((sum, da) => sum + da.quantity, 0);
-        const unitPrice = product.inventory?.unitPrice ? product.inventory.unitPrice.toString() : '';
+        const deptsQty = product.departmentAssets.reduce(
+          (sum, da) => sum + da.quantity,
+          0,
+        );
+        const unitPrice = product.inventory?.unitPrice
+          ? product.inventory.unitPrice.toString()
+          : '';
 
         const row = [
           `"${product.name.replace(/"/g, '""')}"`,
@@ -320,14 +340,20 @@ export class InventoryService {
               assignedDateText = activeAssignment.assignedAt.toISOString();
             }
 
-            const priceText = asset.purchasePrice ? asset.purchasePrice.toString() : (product.inventory?.unitPrice ? product.inventory.unitPrice.toString() : '');
+            const priceText = asset.purchasePrice
+              ? asset.purchasePrice.toString()
+              : product.inventory?.unitPrice
+                ? product.inventory.unitPrice.toString()
+                : '';
 
             const row = [
               `"${product.name.replace(/"/g, '""')}"`,
               typeText,
               unitText,
               `"${asset.inventoryNumber.replace(/"/g, '""')}"`,
-              asset.serialNumber ? `"${asset.serialNumber.replace(/"/g, '""')}"` : '',
+              asset.serialNumber
+                ? `"${asset.serialNumber.replace(/"/g, '""')}"`
+                : '',
               statusText,
               locationText,
               assignedDateText,
@@ -341,7 +367,9 @@ export class InventoryService {
           }
         } else {
           const qty = product.inventory?.quantity ?? 0;
-          const unitPrice = product.inventory?.unitPrice ? product.inventory.unitPrice.toString() : '';
+          const unitPrice = product.inventory?.unitPrice
+            ? product.inventory.unitPrice.toString()
+            : '';
           const row = [
             `"${product.name.replace(/"/g, '""')}"`,
             typeText,

@@ -23,14 +23,15 @@ function EitherAssetOrProduct(validationOptions?: ValidationOptions) {
       propertyName,
       options: {
         message:
-          "assetId (BERILADIGAN uchun) yoki productId + quantity (SARFLANADIGAN uchun) berish majburiy",
+          'assetId (BERILADIGAN uchun) yoki productId + quantity (SARFLANADIGAN uchun) berish majburiy',
         ...validationOptions,
       },
       validator: {
         validate(_value: any, args: ValidationArguments) {
           const obj = args.object as WriteOffDto;
           const hasAsset = !!obj.assetId;
-          const hasProduct = !!obj.productId && obj.quantity !== undefined && obj.quantity >= 1;
+          const hasProduct =
+            !!obj.productId && obj.quantity !== undefined && obj.quantity >= 1;
           // Exactly one branch must be provided
           return hasAsset || hasProduct;
         },
@@ -40,18 +41,27 @@ function EitherAssetOrProduct(validationOptions?: ValidationOptions) {
 }
 
 export class WriteOffDto {
-  @ApiPropertyOptional({ example: 'uuid', description: 'BERILADIGAN uchun asset ID' })
+  @ApiPropertyOptional({
+    example: 'uuid',
+    description: 'BERILADIGAN uchun asset ID',
+  })
   @IsOptional()
   @IsUUID()
   assetId?: string;
 
-  @ApiPropertyOptional({ example: 'uuid', description: 'SARFLANADIGAN uchun product ID' })
+  @ApiPropertyOptional({
+    example: 'uuid',
+    description: 'SARFLANADIGAN uchun product ID',
+  })
   @IsOptional()
   @IsUUID()
   @ValidateIf((o: WriteOffDto) => !o.assetId)
   productId?: string;
 
-  @ApiPropertyOptional({ example: 3, description: 'SARFLANADIGAN uchun miqdor' })
+  @ApiPropertyOptional({
+    example: 3,
+    description: 'SARFLANADIGAN uchun miqdor',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)

@@ -6,7 +6,10 @@ export class ChangePasswordDto {
   @IsString()
   currentPassword: string;
 
-  @ApiProperty({ example: 'newpass123', description: 'Yangi parol (minimum 6 ta belgi)' })
+  @ApiProperty({
+    example: 'newpass123',
+    description: 'Yangi parol (minimum 6 ta belgi)',
+  })
   @IsString()
   @MinLength(6)
   newPassword: string;

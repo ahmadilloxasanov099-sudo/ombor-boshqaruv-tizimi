@@ -50,6 +50,7 @@ export class DepartmentsController {
   create(@Body() dto: CreateDepartmentDto, @CurrentUser() user: any) {
     return this.departmentsService.create(dto, user.id);
   }
+  
   @ApiOperation({ summary: "Bo'limni tahrirlash" })
   @Roles(UserRole.ADMIN)
   @Put(':id')

@@ -10,7 +10,10 @@ export class PaginationDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ example: 20, description: 'Sahifadagi elementlar soni' })
+  @ApiPropertyOptional({
+    example: 20,
+    description: 'Sahifadagi elementlar soni',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

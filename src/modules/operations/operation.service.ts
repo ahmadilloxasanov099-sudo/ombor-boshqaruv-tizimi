@@ -1,4 +1,3 @@
-
 import {
   BadRequestException,
   Injectable,
@@ -30,7 +29,11 @@ export class OperationsService {
         include: { product: true },
       });
 
-      if (inventory && inventory.product && inventory.quantity < inventory.minLevel) {
+      if (
+        inventory &&
+        inventory.product &&
+        inventory.quantity < inventory.minLevel
+      ) {
         // Fire and forget: send email asynchronously in background
         this.mailService
           .sendLowStockAlert(
@@ -51,7 +54,10 @@ export class OperationsService {
   async stockIn(dto: StockInDto, performedById: string) {
     // 1. Agar BERILADIGAN bo'lsa, inventar raqamlarini tekshiramiz (Senior Validation)
     if (dto.productType === ProductType.BERILADIGAN) {
-      if (!dto.inventoryNumbers || dto.inventoryNumbers.length !== dto.quantity) {
+      if (
+        !dto.inventoryNumbers ||
+        dto.inventoryNumbers.length !== dto.quantity
+      ) {
         throw new BadRequestException(
           `Jihozlar uchun aynan ${dto.quantity} ta inventar raqam yuborilishi shart!`,
         );
@@ -82,7 +88,11 @@ export class OperationsService {
 
     return this.prisma.$transaction(async (tx) => {
       let product = await tx.product.findFirst({
-        where: { name: dto.name, productType: dto.productType, deletedAt: null },
+        where: {
+          name: dto.name,
+          productType: dto.productType,
+          deletedAt: null,
+        },
         include: { inventory: true },
       });
 
@@ -142,7 +152,9 @@ export class OperationsService {
           productId: product.id,
           performedById,
           documentNumber: dto.documentNumber,
-          documentDate: dto.documentDate ? new Date(dto.documentDate) : undefined,
+          documentDate: dto.documentDate
+            ? new Date(dto.documentDate)
+            : undefined,
           note: dto.note,
         },
       });
@@ -163,7 +175,7 @@ export class OperationsService {
     if (!product) throw new NotFoundException('Mahsulot topilmadi');
     if (product.productType !== ProductType.BERILADIGAN) {
       throw new BadRequestException(
-        "Faqat BERILADIGAN mahsulot xodimga beriladi",
+        'Faqat BERILADIGAN mahsulot xodimga beriladi',
       );
     }
 
@@ -211,7 +223,10 @@ export class OperationsService {
         assetId = newAsset.id;
       } else {
         assetId = existingAsset.id;
-        if (dto.serialNumber && existingAsset.serialNumber !== dto.serialNumber) {
+        if (
+          dto.serialNumber &&
+          existingAsset.serialNumber !== dto.serialNumber
+        ) {
           await tx.asset.update({
             where: { id: existingAsset.id },
             data: { serialNumber: dto.serialNumber },
@@ -256,7 +271,7 @@ export class OperationsService {
       });
     });
 
-    this.checkStockAndAlert(dto.productId);
+    void this.checkStockAndAlert(dto.productId);
     return result;
   }
 
@@ -315,7 +330,10 @@ export class OperationsService {
         assetId = newAsset.id;
       } else {
         assetId = existingAsset.id;
-        if (dto.serialNumber && existingAsset.serialNumber !== dto.serialNumber) {
+        if (
+          dto.serialNumber &&
+          existingAsset.serialNumber !== dto.serialNumber
+        ) {
           await tx.asset.update({
             where: { id: existingAsset.id },
             data: { serialNumber: dto.serialNumber },
@@ -378,7 +396,7 @@ export class OperationsService {
       });
     });
 
-    this.checkStockAndAlert(dto.productId);
+    void this.checkStockAndAlert(dto.productId);
     return result;
   }
 
@@ -536,7 +554,7 @@ export class OperationsService {
       return { message: "Material bo'limga muvaffaqiyatli berildi" };
     });
 
-    this.checkStockAndAlert(dto.productId);
+    void this.checkStockAndAlert(dto.productId);
     return result;
   }
 
@@ -561,10 +579,16 @@ export class OperationsService {
       if (!asset) throw new NotFoundException('Jihoz topilmadi');
 
       const assignment = await this.prisma.assignment.findFirst({
-        where: { departmentId: dto.departmentId, assetId: dto.assetId, returnedAt: null },
+        where: {
+          departmentId: dto.departmentId,
+          assetId: dto.assetId,
+          returnedAt: null,
+        },
       });
       if (!assignment) {
-        throw new BadRequestException('Bu jihoz ushbu bo‘limga biriktirilmagan');
+        throw new BadRequestException(
+          'Bu jihoz ushbu bo‘limga biriktirilmagan',
+        );
       }
 
       return this.prisma.$transaction(async (tx) => {
@@ -664,7 +688,7 @@ export class OperationsService {
 
       if (asset.assignments.length > 0) {
         throw new BadRequestException(
-          "Jihoz xodimda bor, avval qaytarib oling",
+          'Jihoz xodimda bor, avval qaytarib oling',
         );
       }
 
@@ -689,7 +713,7 @@ export class OperationsService {
         return { message: 'Jihoz hisobdan chiqarildi' };
       });
 
-      this.checkStockAndAlert(asset.productId);
+      void this.checkStockAndAlert(asset.productId);
       return result;
     }
 
@@ -725,7 +749,239 @@ export class OperationsService {
       return { message: 'Mahsulot hisobdan chiqarildi' };
     });
 
-    this.checkStockAndAlert(dto.productId!);
+    void this.checkStockAndAlert(dto.productId!);
     return result;
+  }
+
+  async generatePdfAct(id: string): Promise<Buffer> {
+    const operation = await this.prisma.operation.findUnique({
+      where: { id },
+      include: {
+        product: true,
+        asset: true,
+        user: { include: { department: true } },
+        department: true,
+        performedBy: true,
+      },
+    });
+
+    if (!operation) {
+      throw new NotFoundException('Operatsiya topilmadi');
+    }
+
+    const dateStr = operation.createdAt.toLocaleDateString('uz-UZ', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    let actTitle = 'QABUL QILISH - TOPSHIRISH DALOLATNOMASI';
+    let giverTitle = 'Topshirdi (Mas’ul shaxs)';
+    let receiverTitle = 'Qabul qildi';
+    
+    let giverName = operation.performedBy?.fullName || 'Ombor mudiri';
+    let receiverName = '';
+    let departmentName = '';
+
+    if (operation.type === 'GIVE_TO_USER' || operation.type === 'TRANSFER_USER') {
+      receiverName = operation.user?.fullName || '';
+      departmentName = operation.user?.department?.name || '';
+    } else if (operation.type === 'RETURN_FROM_USER') {
+      actTitle = 'JIHOZNI OMBORGA QAYTARISH DALOLATNOMASI';
+      giverTitle = 'Topshirdi (Xodim)';
+      receiverTitle = 'Qabul qildi (Ombor mudiri)';
+      giverName = operation.user?.fullName || '';
+      receiverName = operation.performedBy?.fullName || 'Ombor mudiri';
+      departmentName = operation.user?.department?.name || '';
+    } else if (operation.type === 'ASSIGN_TO_DEPT' || operation.type === 'GIVE_TO_DEPT') {
+      receiverName = 'Bo‘lim mas’ul vakili';
+      departmentName = operation.department?.name || '';
+    } else if (operation.type === 'RETURN_FROM_DEPT') {
+      actTitle = 'BO‘LIMDAN OMBORGA QAYTARISH DALOLATNOMASI';
+      giverTitle = 'Topshirdi (Bo‘lim)';
+      receiverTitle = 'Qabul qildi (Ombor mudiri)';
+      giverName = operation.department?.name || '';
+      receiverName = operation.performedBy?.fullName || 'Ombor mudiri';
+    } else if (operation.type === 'WRITE_OFF') {
+      actTitle = 'JIHOZ / MATERIALNI HISOBDAN CHIQARISH DALOLATNOMASI';
+      giverTitle = 'Tasdiqladi (Admin)';
+      receiverTitle = 'Hisobdan chiqarildi (Utilizatsiya)';
+      giverName = operation.performedBy?.fullName || 'Tizim Administratori';
+      receiverName = 'Ombor hisobidan o‘chirildi';
+    }
+
+    const docNum = operation.documentNumber || `DAL-${operation.id.slice(0, 8).toUpperCase()}`;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body {
+            font-family: 'Times New Roman', Times, serif;
+            margin: 40px;
+            font-size: 14px;
+            color: #000;
+            line-height: 1.5;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 30px;
+          }
+          .header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+          }
+          .doc-meta {
+            width: 100%;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #000;
+            padding-bottom: 10px;
+          }
+          .doc-meta td {
+            font-size: 14px;
+          }
+          .text-right {
+            text-align: right;
+          }
+          .content-text {
+            text-indent: 50px;
+            text-align: justify;
+            margin-bottom: 25px;
+          }
+          .table-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 15px;
+          }
+          table.items {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 40px;
+          }
+          table.items th, table.items td {
+            border: 1px solid #000;
+            padding: 8px;
+            text-align: left;
+          }
+          table.items th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+            text-align: center;
+          }
+          table.items td.center {
+            text-align: center;
+          }
+          .signatures {
+            width: 100%;
+            margin-top: 50px;
+          }
+          .signatures td {
+            width: 50%;
+            vertical-align: top;
+          }
+          .sig-line {
+            margin-top: 40px;
+            border-top: 1px solid #000;
+            width: 80%;
+            text-align: center;
+            font-size: 12px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h2>TASHKILOT OMBOR TIZIMI (WMS)</h2>
+          <h2 style="margin-top: 5px;">${actTitle}</h2>
+        </div>
+
+        <table class="doc-meta">
+          <tr>
+            <td><strong>Hujjat №:</strong> ${docNum}</td>
+            <td class="text-right"><strong>Sana:</strong> ${dateStr}</td>
+          </tr>
+        </table>
+
+        <div class="content-text">
+          Ushbu dalolatnoma bir tomondan topshiruvchi <strong>${giverName}</strong>, 
+          ikkinchi tomondan qabul qiluvchi <strong>${receiverName}</strong> ${departmentName ? `(Bo'lim: ${departmentName})` : ''} 
+          o'rtasida tuzildi. Mazkur hujjat orqali quyidagi tovar-moddiy boyliklar (TMB) rasmiylashtirildi:
+        </div>
+
+        <div class="table-title">Topshirilgan Tovar-Moddiy Boyliklar ro'yxati:</div>
+        <table class="items">
+          <thead>
+            <tr>
+              <th style="width: 5%;">№</th>
+              <th style="width: 45%;">Mahsulot nomi</th>
+              <th style="width: 20%;">Inventar raqami</th>
+              <th style="width: 15%;">Seriya raqami</th>
+              <th style="width: 15%;">Soni (O'lchov)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="center">1</td>
+              <td>${operation.product?.name || 'Noma‘lum mahsulot'}</td>
+              <td>${operation.asset?.inventoryNumber || '—'}</td>
+              <td>${operation.asset?.serialNumber || '—'}</td>
+              <td class="center">${operation.quantity} ${operation.product?.unit || 'ta'}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="content-text" style="margin-top: 20px;">
+          Topshirilgan tovar-moddiy boyliklar to'liq holatda, soz, butun va talabga javob beradigan darajada topshirildi.
+          Tomonlarning bir-biriga nisbatan e'tirozlari mavjud emas.
+        </div>
+
+        <table class="signatures">
+          <tr>
+            <td>
+              <strong>${giverTitle}:</strong>
+              <div class="sig-line">
+                (imzo, sana)<br><br>
+                <strong>${giverName}</strong>
+              </div>
+            </td>
+            <td>
+              <strong>${receiverTitle}:</strong>
+              <div class="sig-line">
+                (imzo, sana)<br><br>
+                <strong>${receiverName}</strong>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const puppeteer = require('puppeteer');
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const page = await browser.newPage();
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '20mm',
+          right: '20mm',
+          bottom: '20mm',
+          left: '20mm',
+        },
+      });
+      return pdfBuffer;
+    } finally {
+      await browser.close();
+    }
   }
 }
