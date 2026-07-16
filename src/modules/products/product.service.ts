@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -102,7 +103,10 @@ export class ProductsService {
     });
 
     if (activeAssets > 0) {
-      throw new Error("Mahsulotda aktiv jihozlar bor, o'chirib bo'lmaydi");
+      // FIX: was `throw new Error(...)` which bypassed HttpExceptionFilter and returned 500
+      throw new BadRequestException(
+        "Mahsulotda aktiv jihozlar bor, o'chirib bo'lmaydi",
+      );
     }
 
     await this.prisma.product.update({
@@ -121,39 +125,60 @@ export class ProductsService {
     return { message: "Mahsulot muvaffaqiyatli o'chirildi" };
   }
 
-  async getHistory(id: string) {
+  /**
+   * Returns paginated operation history for a given product.
+   * FIX: Added pagination — previously returned all rows without limit.
+   */
+  async getHistory(id: string, page = 1, limit = 20) {
     await this.findOne(id);
 
-    return this.prisma.operation.findMany({
-      where: { productId: id },
-      include: {
-        user: { select: { id: true, fullName: true, username: true } },
-        fromUser: { select: { id: true, fullName: true, username: true } },
-        asset: { select: { id: true, inventoryNumber: true } },
-        department: { select: { id: true, name: true } },
-        performedBy: { select: { id: true, fullName: true, username: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.operation.findMany({
+        where: { productId: id },
+        skip,
+        take: limit,
+        include: {
+          user: { select: { id: true, fullName: true, username: true } },
+          fromUser: { select: { id: true, fullName: true, username: true } },
+          asset: { select: { id: true, inventoryNumber: true } },
+          department: { select: { id: true, name: true } },
+          performedBy: { select: { id: true, fullName: true, username: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.operation.count({ where: { productId: id } }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
-  async getLowStock() {
-    const items = await this.prisma.inventory.findMany({
-      where: {
-        product: { deletedAt: null },
-      },
-      include: {
-        product: {
-          select: {
-            id: true,
-            name: true,
-            productType: true,
-            unit: true,
-          },
-        },
-      },
-    });
-
-    return items.filter((item) => item.quantity < item.minLevel);
+  /**
+   * Returns products where current stock < minLevel.
+   * FIX: Pushes the comparison to SQL via $queryRaw instead of loading all rows into memory.
+   */
+  async getLowStock(): Promise<any[]> {
+    return this.prisma.$queryRaw`
+      SELECT
+        i."productId",
+        p.name,
+        p."productType",
+        p.unit,
+        i.quantity,
+        i."minLevel",
+        (i."minLevel" - i.quantity) AS shortage
+      FROM "Inventory" i
+      JOIN "Product" p ON p.id = i."productId"
+      WHERE i.quantity < i."minLevel"
+        AND p."deletedAt" IS NULL
+      ORDER BY shortage DESC
+    `;
   }
 }

@@ -13,35 +13,35 @@ import {
 } from 'class-validator';
 
 export class BulkStockInItemDto {
-  @ApiProperty({ example: 'Lenovo ThinkPad E15', description: 'Mahsulot nomi' })
+  @ApiProperty({ example: 'Lenovo ThinkPad E15' })
   @IsString()
   name: string;
 
-  @ApiPropertyOptional({ example: 'LNV-E15', description: 'Mahsulot kodi' })
-  @IsOptional()
-  @IsString()
-  code?: string;
-
-  @ApiProperty({ enum: ProductType, example: ProductType.ASSET })
+  @ApiProperty({ enum: ProductType, example: ProductType.BERILADIGAN })
   @IsEnum(ProductType)
   productType: ProductType;
 
-  @ApiPropertyOptional({ enum: UnitType, example: UnitType.PIECE })
+  @ApiPropertyOptional({ enum: UnitType, example: UnitType.DONA })
   @IsOptional()
   @IsEnum(UnitType)
   unit?: UnitType;
+
+  @ApiPropertyOptional({ example: 2024 })
+  @IsOptional()
+  @IsInt()
+  year?: number;
 
   @ApiPropertyOptional({ example: 'Dell Latitude 5520' })
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiProperty({ example: 3, description: 'Miqdor' })
+  @ApiProperty({ example: 3 })
   @IsInt()
   @Min(1)
   quantity: number;
 
-  @ApiProperty({ example: 9000000, description: '1 ta narxi' })
+  @ApiProperty({ example: 9000000 })
   @IsNumber()
   @Min(0)
   @Type(() => Number)
@@ -56,6 +56,16 @@ export class BulkStockInItemDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({ example: ['INV-001', 'INV-002'], type: [String] })
+  @IsOptional()
+  @IsString({ each: true })
+  inventoryNumbers?: string[];
+
+  @ApiPropertyOptional({ example: ['SN-001', 'SN-002'], type: [String] })
+  @IsOptional()
+  @IsString({ each: true })
+  serialNumbers?: string[];
 }
 
 export class BulkStockInDto {

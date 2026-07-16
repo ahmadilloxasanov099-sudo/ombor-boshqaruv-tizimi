@@ -256,7 +256,7 @@ Rol belgilari:
   [*]  = Roli bo'yicha cheklangan (quyida izoh)
 
 ------------------------------------------------------------
-  AUTH — 5 ta endpoint
+  AUTH — 5 ta endpoint (To'g'ri)
 ------------------------------------------------------------
 
   POST   /auth/login               [ALL]  Tizimga kirish
@@ -267,7 +267,7 @@ Rol belgilari:
 
 
 ------------------------------------------------------------
-  DEPARTMENTS — 5 ta endpoint
+  DEPARTMENTS — 6 ta endpoint
 ------------------------------------------------------------
 
   GET    /departments              [A]    Barcha bo'limlar ro'yxati
@@ -276,8 +276,6 @@ Rol belgilari:
   POST   /departments              [A]    Yangi bo'lim qo'shish
   PUT    /departments/:id          [A]    Tahrirlash
   DELETE /departments/:id          [A]    O'chirish (bo'sh bo'lsa)
-
-  (Jami: 6 ta endpoint)
 
 
 ------------------------------------------------------------

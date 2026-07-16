@@ -224,28 +224,41 @@ export class UsersService {
 
   async toggleStatus(id: string, updatedBy: string) {
     const user = await this.findOne(id);
+    const newStatus = !user.isActive;
 
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: { isActive: !user.isActive },
-      select: {
-        id: true,
-        fullName: true,
-        username: true,
-        isActive: true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id },
+        data: { isActive: newStatus },
+        select: {
+          id: true,
+          fullName: true,
+          username: true,
+          isActive: true,
+        },
+      });
+
+      if (!newStatus) {
+        // If blocking the user, immediately revoke all active refresh tokens
+        await tx.refreshToken.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: updatedBy,
+          action: AuditAction.UPDATE,
+          tableName: 'User',
+          recordId: id,
+          oldData: { isActive: user.isActive },
+          newData: { isActive: updated.isActive },
+        },
+      });
+
+      return updated;
     });
-
-    await this.auditService.log({
-      userId: updatedBy,
-      action: AuditAction.UPDATE,
-      tableName: 'User',
-      recordId: id,
-      oldData: { isActive: user.isActive },
-      newData: { isActive: updated.isActive },
-    });
-
-    return updated;
   }
 
   async remove(id: string, deletedBy: string) {
@@ -261,24 +274,28 @@ export class UsersService {
       );
     }
 
-    await this.prisma.user.update({
-      where: { id },
-      data: { deletedAt: new Date(), isActive: false },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false },
+      });
 
-    await this.prisma.refreshToken.updateMany({
-      where: { userId: id, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+      await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
 
-    await this.auditService.log({
-      userId: deletedBy,
-      action: AuditAction.DELETE,
-      tableName: 'User',
-      recordId: id,
-    });
+      await tx.auditLog.create({
+        data: {
+          userId: deletedBy,
+          action: AuditAction.DELETE,
+          tableName: 'User',
+          recordId: id,
+        },
+      });
 
-    return { message: "Xodim muvaffaqiyatli o'chirildi" };
+      return { message: "Xodim muvaffaqiyatli o'chirildi" };
+    });
   }
 
   async bulkReturn(id: string, performedById: string) {

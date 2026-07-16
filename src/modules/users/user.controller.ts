@@ -28,28 +28,28 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @ApiOperation({ summary: "Barcha xodimlar ro'yxati" })
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.KADR)
   @Get()
   findAll(@Query() query: UserQueryDto) {
     return this.usersService.findAll(query);
   }
 
   @ApiOperation({ summary: "Bitta xodim ma'lumoti" })
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.KADR)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
   }
 
   @ApiOperation({ summary: 'Xodimda hozir nima bor' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
   @Get(':id/assignments')
   getAssignments(@Param('id') id: string) {
     return this.usersService.getAssignments(id);
   }
 
   @ApiOperation({ summary: 'Xodim tarixi' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
   @Get(':id/history')
   getHistory(@Param('id') id: string, @CurrentUser() currentUser: any) {
     if (currentUser.role === UserRole.XODIM && currentUser.id !== id) {

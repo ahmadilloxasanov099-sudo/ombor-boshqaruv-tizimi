@@ -11,7 +11,7 @@ import { TransferUserDto } from './dto/transfer-user.dto';
 import { GiveToDeptDto } from './dto/give-to-dept.dto';
 import { ReturnFromDeptDto } from './dto/return-from-dept.dto';
 import { WriteOffDto } from './dto/writeoff.dto';
-import { StockInDto } from '../inventory';
+import { StockInDto } from './dto/stock-in.dto';
 
 @ApiTags('Operations')
 @ApiBearerAuth()

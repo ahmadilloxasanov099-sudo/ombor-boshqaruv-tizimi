@@ -14,7 +14,6 @@ import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators';
-import { LogoutDto } from './dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -42,13 +41,13 @@ export class AuthController {
 
   @ApiOperation({ summary: 'Tizimdan chiqish' })
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AuthGuard('jwt-refresh'))
   @Post('logout')
-  logout(@Req() req: any, @Body() dto: LogoutDto) {
-    return this.authService.logout(dto.refreshToken, req.user.id);
+  logout(@Req() req: any) {
+    return this.authService.logout(req.user.sub, req.user.refreshTokenId);
   }
 
-  @ApiOperation({ summary: 'Oz profilini korish' })
+  @ApiOperation({ summary: 'Mening profilim' })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('me')

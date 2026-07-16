@@ -83,6 +83,14 @@ export class DepartmentsService {
   }
 
   async create(dto: CreateDepartmentDto, createdBy: string) {
+    const existing = await this.prisma.department.findFirst({
+      where: { name: dto.name, deletedAt: null },
+    });
+
+    if (existing) {
+      throw new BadRequestException("Bu nomdagi bo'lim allaqachon mavjud");
+    }
+
     const department = await this.prisma.department.create({
       data: dto,
     });
@@ -100,6 +108,16 @@ export class DepartmentsService {
 
   async update(id: string, dto: UpdateDepartmentDto, updatedBy: string) {
     const oldDepartment = await this.findOne(id);
+
+    if (dto.name) {
+      const existing = await this.prisma.department.findFirst({
+        where: { name: dto.name, deletedAt: null },
+      });
+
+      if (existing && existing.id !== id) {
+        throw new BadRequestException("Bu nomdagi bo'lim allaqachon mavjud");
+      }
+    }
 
     const updated = await this.prisma.department.update({
       where: { id },
@@ -131,8 +149,12 @@ export class DepartmentsService {
       );
     }
 
+    // FIX: Only block deletion if there are active assets (quantity > 0)
     const assetCount = await this.prisma.departmentAsset.count({
-      where: { departmentId: id },
+      where: {
+        departmentId: id,
+        quantity: { gt: 0 },
+      },
     });
 
     if (assetCount > 0) {
@@ -141,19 +163,22 @@ export class DepartmentsService {
       );
     }
 
-    await this.prisma.department.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.department.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
 
-    await this.auditService.log({
-      userId: deletedBy,
-      action: AuditAction.DELETE,
-      tableName: 'Department',
-      recordId: id,
-      oldData: department,
-    });
+      await tx.auditLog.create({
+        data: {
+          userId: deletedBy,
+          action: AuditAction.DELETE,
+          tableName: 'Department',
+          recordId: id,
+        },
+      });
 
-    return { message: "Bo'lim muvaffaqiyatli o'chirildi" };
+      return { message: "Bo'lim muvaffaqiyatli o'chirildi" };
+    });
   }
 }

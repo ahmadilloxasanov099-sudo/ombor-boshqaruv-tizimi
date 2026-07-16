@@ -12,6 +12,7 @@ datasource db {
 enum UserRole {
   ADMIN
   OMBORCHI
+  KADR
   XODIM
 }
 
@@ -122,6 +123,7 @@ model Product {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([name])
   @@index([productType])
   @@index([deletedAt])
 }
@@ -191,6 +193,8 @@ model Assignment {
 
   @@index([userId])
   @@index([assetId])
+  @@index([userId, returnedAt])
+  @@index([assetId, returnedAt])
 }
 
 // ─── DEPARTMENT ASSET ───────────────────────────────────
@@ -268,6 +272,7 @@ model RefreshToken {
 
   @@index([userId])
   @@index([tokenHash])
+  @@index([expiresAt])
 }
 
 // ─── AUDIT LOG ──────────────────────────────────────────

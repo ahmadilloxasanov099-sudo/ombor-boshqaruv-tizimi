@@ -75,4 +75,20 @@ export class StockInDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({
+    example: ['INV-1001', 'INV-1002'],
+    description: 'Faqat BERILADIGAN mahsulotlar uchun inventar raqamlari ro‘yxati',
+  })
+  @IsOptional()
+  @IsString({ each: true })
+  inventoryNumbers?: string[];
+
+  @ApiPropertyOptional({
+    example: ['SN-001', 'SN-002'],
+    description: 'Seriya raqamlari ro‘yxati (tartib bo‘yicha)',
+  })
+  @IsOptional()
+  @IsString({ each: true })
+  serialNumbers?: string[];
 }

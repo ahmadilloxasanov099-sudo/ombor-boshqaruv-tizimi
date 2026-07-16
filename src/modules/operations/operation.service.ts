@@ -17,8 +17,39 @@ import { WriteOffDto } from './dto/writeoff.dto';
 export class OperationsService {
   constructor(private prisma: PrismaService) {}
 
-  // STOCK_IN — omborga kirim (Product avtomatik yaratiladi)
+  // STOCK_IN — omborga kirim (Product va Assetlar avtomatik yaratiladi)
   async stockIn(dto: StockInDto, performedById: string) {
+    // 1. Agar BERILADIGAN bo'lsa, inventar raqamlarini tekshiramiz (Senior Validation)
+    if (dto.productType === ProductType.BERILADIGAN) {
+      if (!dto.inventoryNumbers || dto.inventoryNumbers.length !== dto.quantity) {
+        throw new BadRequestException(
+          `Jihozlar uchun aynan ${dto.quantity} ta inventar raqam yuborilishi shart!`,
+        );
+      }
+
+      // Kiritilgan inventar raqamlarining o'zaro takrorlanmasligini tekshirish
+      const uniqueNumbers = new Set(dto.inventoryNumbers);
+      if (uniqueNumbers.size !== dto.inventoryNumbers.length) {
+        throw new BadRequestException(
+          'Kiritilgan inventar raqamlari ichida takrorlanishlar mavjud!',
+        );
+      }
+
+      // Bazada ushbu inventar raqamlari allaqachon mavjud emasligini tekshirish
+      const existingAsset = await this.prisma.asset.findFirst({
+        where: {
+          inventoryNumber: { in: dto.inventoryNumbers },
+          deletedAt: null,
+        },
+      });
+
+      if (existingAsset) {
+        throw new BadRequestException(
+          `Inventar raqamlaridan biri bazada allaqachon band: ${existingAsset.inventoryNumber}`,
+        );
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       let product = await tx.product.findFirst({
         where: { name: dto.name, productType: dto.productType, deletedAt: null },
@@ -59,6 +90,21 @@ export class OperationsService {
         },
       });
 
+      // 2. Jihozlarni (Asset) avtomatik yaratish
+      if (dto.productType === ProductType.BERILADIGAN && dto.inventoryNumbers) {
+        for (let i = 0; i < dto.inventoryNumbers.length; i++) {
+          await tx.asset.create({
+            data: {
+              productId: product.id,
+              inventoryNumber: dto.inventoryNumbers[i],
+              serialNumber: dto.serialNumbers?.[i] || null,
+              status: 'ACTIVE',
+              purchasePrice: dto.unitPrice ?? null,
+            },
+          });
+        }
+      }
+
       await tx.operation.create({
         data: {
           type: 'STOCK_IN',
@@ -66,7 +112,7 @@ export class OperationsService {
           productId: product.id,
           performedById,
           documentNumber: dto.documentNumber,
-          documentDate: dto.documentDate,
+          documentDate: dto.documentDate ? new Date(dto.documentDate) : undefined,
           note: dto.note,
         },
       });
@@ -96,9 +142,7 @@ export class OperationsService {
     });
     if (!user) throw new NotFoundException('Xodim topilmadi');
 
-    if (!product.inventory || product.inventory.quantity < 1) {
-      throw new BadRequestException("Omborda yetarli miqdor yo'q");
-    }
+    // Removed check here to prevent TOCTOU race condition
 
     const existingAsset = await this.prisma.asset.findUnique({
       where: { inventoryNumber: dto.inventoryNumber },
@@ -149,10 +193,13 @@ export class OperationsService {
         data: { userId: dto.userId, assetId },
       });
 
-      await tx.inventory.update({
-        where: { productId: dto.productId },
+      const invUpdate = await tx.inventory.updateMany({
+        where: { productId: dto.productId, quantity: { gte: 1 } },
         data: { quantity: { decrement: 1 } },
       });
+      if (invUpdate.count === 0) {
+        throw new BadRequestException("Omborda yetarli miqdor yo'q");
+      }
 
       await tx.operation.create({
         data: {
@@ -288,9 +335,7 @@ export class OperationsService {
       );
     }
 
-    if (!product.inventory || product.inventory.quantity < dto.quantity) {
-      throw new BadRequestException("Omborda yetarli miqdor yo'q");
-    }
+    // Removed check here to prevent TOCTOU race condition
 
     const department = await this.prisma.department.findFirst({
       where: { id: dto.departmentId, deletedAt: null },
@@ -298,10 +343,13 @@ export class OperationsService {
     if (!department) throw new NotFoundException("Bo'lim topilmadi");
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.inventory.update({
-        where: { productId: dto.productId },
+      const invUpdate = await tx.inventory.updateMany({
+        where: { productId: dto.productId, quantity: { gte: dto.quantity } },
         data: { quantity: { decrement: dto.quantity } },
       });
+      if (invUpdate.count === 0) {
+        throw new BadRequestException("Omborda yetarli miqdor yo'q");
+      }
 
       await tx.departmentAsset.upsert({
         where: {
@@ -355,20 +403,20 @@ export class OperationsService {
       },
     });
 
-    if (!departmentAsset || departmentAsset.quantity < dto.quantity) {
-      throw new BadRequestException("Bo'limda yetarli miqdor yo'q");
-    }
+    // Removed check here to prevent TOCTOU race condition
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.departmentAsset.update({
+      const deptUpdate = await tx.departmentAsset.updateMany({
         where: {
-          departmentId_productId: {
-            departmentId: dto.departmentId,
-            productId: dto.productId,
-          },
+          departmentId: dto.departmentId,
+          productId: dto.productId,
+          quantity: { gte: dto.quantity },
         },
         data: { quantity: { decrement: dto.quantity } },
       });
+      if (deptUpdate.count === 0) {
+        throw new BadRequestException("Bo'limda yetarli miqdor yo'q");
+      }
 
       await tx.inventory.update({
         where: { productId: dto.productId },
@@ -438,15 +486,16 @@ export class OperationsService {
     });
     if (!product) throw new NotFoundException('Mahsulot topilmadi');
 
-    if (!product.inventory || product.inventory.quantity < dto.quantity!) {
-      throw new BadRequestException("Omborda yetarli miqdor yo'q");
-    }
+    // Removed check here to prevent TOCTOU race condition
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.inventory.update({
-        where: { productId: dto.productId },
+      const invUpdate = await tx.inventory.updateMany({
+        where: { productId: dto.productId, quantity: { gte: dto.quantity! } },
         data: { quantity: { decrement: dto.quantity! } },
       });
+      if (invUpdate.count === 0) {
+        throw new BadRequestException("Omborda yetarli miqdor yo'q");
+      }
 
       await tx.operation.create({
         data: {

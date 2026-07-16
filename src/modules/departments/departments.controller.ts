@@ -24,14 +24,14 @@ export class DepartmentsController {
   constructor(private departmentsService: DepartmentsService) {}
 
   @ApiOperation({ summary: "Barcha bo'limlar royxati" })
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.KADR)
   @Get()
   findAll() {
     return this.departmentsService.findAll();
   }
 
   @ApiOperation({ summary: "Bitta bo'lim" })
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.KADR)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.departmentsService.findOne(id);

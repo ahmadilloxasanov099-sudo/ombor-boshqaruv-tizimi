@@ -25,7 +25,7 @@ export class ProductsController {
   constructor(private productsService: ProductsService) {}
 
   @ApiOperation({ summary: "Barcha mahsulotlar ro'yxati" })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.XODIM)
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR, UserRole.XODIM)
   @Get()
   findAll(@Query() query: ProductQueryDto) {
     return this.productsService.findAll(query);
@@ -39,7 +39,7 @@ export class ProductsController {
   }
 
   @ApiOperation({ summary: 'Bitta mahsulot' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.XODIM)
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR, UserRole.XODIM)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);
@@ -48,8 +48,16 @@ export class ProductsController {
   @ApiOperation({ summary: 'Mahsulot harakatlari tarixi' })
   @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
   @Get(':id/history')
-  getHistory(@Param('id') id: string) {
-    return this.productsService.getHistory(id);
+  getHistory(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.productsService.getHistory(
+      id,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    );
   }
 
   @ApiOperation({ summary: 'Mahsulotni tahrirlash' })

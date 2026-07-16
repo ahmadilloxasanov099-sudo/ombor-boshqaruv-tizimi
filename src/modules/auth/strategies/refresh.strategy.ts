@@ -17,22 +17,22 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
 
   async validate(req: any, payload: any) {
     const refreshToken = req.body?.refreshToken;
+    const tokenId = payload.tokenId;
 
-    const tokens = await this.prisma.refreshToken.findMany({
-      where: {
-        userId: payload.sub,
-        revokedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-    });
-
-    let validToken: typeof tokens[0] | null = null;
-    for (const token of tokens) {
-      const match = await bcrypt.compare(refreshToken, token.tokenHash);
-      if (match) { validToken = token; break; }
+    if (!tokenId) {
+      throw new UnauthorizedException('Refresh token yaroqsiz');
     }
 
-    if (!validToken) {
+    const dbToken = await this.prisma.refreshToken.findUnique({
+      where: { id: tokenId },
+    });
+
+    if (!dbToken || dbToken.revokedAt || dbToken.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token yaroqsiz yoki muddati o\'tgan');
+    }
+
+    const match = await bcrypt.compare(refreshToken, dbToken.tokenHash);
+    if (!match) {
       throw new UnauthorizedException('Refresh token yaroqsiz');
     }
 
@@ -43,7 +43,7 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
       throw new UnauthorizedException('Foydalanuvchi bloklangan yoki o\'chirilgan');
     }
 
-    return { ...payload, refreshTokenId: validToken.id };
+    return { ...payload, refreshTokenId: dbToken.id };
   }
 } 
 

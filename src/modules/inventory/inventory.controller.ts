@@ -12,7 +12,6 @@ import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { InventoryService } from './inventory.service';
-import { StockInDto } from './dto/stock-in.dto';
 import { SetMinLevelDto } from './dto/set-min-level.dto';
 import { CurrentUser, Roles } from '../auth';
 import { BulkStockInDto } from './dto';
@@ -43,13 +42,6 @@ export class InventoryController {
   @Get(':productId')
   findOne(@Param('productId') productId: string) {
     return this.inventoryService.findOne(productId);
-  }
-
-  @ApiOperation({ summary: "Omborga kirim qo'shish" })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
-  @Post('stock-in')
-  stockIn(@Body() dto: StockInDto, @CurrentUser() user: any) {
-    return this.inventoryService.stockIn(dto, user.id);
   }
 
   @ApiOperation({ summary: 'Minimal daraja belgilash' })

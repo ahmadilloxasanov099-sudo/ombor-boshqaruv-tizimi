@@ -4,7 +4,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { generateTokens } from 'src/common';
 import { LoginDto } from './dto/login.dto';
 import { PrismaService } from 'src/prisma';
 import { JwtService } from '@nestjs/jwt';
@@ -34,13 +33,11 @@ export class AuthService {
       throw new UnauthorizedException("Username yoki parol noto'g'ri");
     }
 
-    const tokens = await generateTokens(
-      this.jwtService,
+    const tokens = await this.generateTokenPair(
       user.id,
       user.username,
       user.role,
     );
-    await this.saveRefreshToken(user.id, tokens.refreshToken);
 
     return {
       accessToken: tokens.accessToken,
@@ -55,22 +52,15 @@ export class AuthService {
     };
   }
 
-  async logout(refreshToken: string, userId: string) {
-    const tokens = await this.prisma.refreshToken.findMany({
-      where: { userId, revokedAt: null },
+  async logout(userId: string, refreshTokenId: string) {
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        id: refreshTokenId,
+        userId: userId,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
     });
-
-    for (const token of tokens) {
-      const match = await bcrypt.compare(refreshToken, token.tokenHash);
-      if (match) {
-        await this.prisma.refreshToken.update({
-          where: { id: token.id },
-          data: { revokedAt: new Date() },
-        });
-        break;
-      }
-    }
-
     return { message: 'Tizimdan muvaffaqiyatli chiqdingiz' };
   }
 
@@ -115,19 +105,18 @@ export class AuthService {
       );
     }
 
-    const tokens = await generateTokens(
-      this.jwtService,
-      user.id,
-      user.username,
-      user.role,
-    );
-
+    // Revoke old token
     await this.prisma.refreshToken.update({
       where: { id: refreshTokenId },
       data: { revokedAt: new Date() },
     });
 
-    await this.saveRefreshToken(userId, tokens.refreshToken);
+    // Generate new pair
+    const tokens = await this.generateTokenPair(
+      user.id,
+      user.username,
+      user.role,
+    );
 
     return {
       accessToken: tokens.accessToken,
@@ -135,13 +124,56 @@ export class AuthService {
     };
   }
 
-  private async saveRefreshToken(userId: string, token: string) {
-    const tokenHash = await bcrypt.hash(token, 10);
+  async generateTokenPair(userId: string, username: string, role: string) {
+    // 1. Create a RefreshToken record in DB to get a unique ID
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiration
 
-    await this.prisma.refreshToken.create({
-      data: { userId, tokenHash, expiresAt },
+    const refreshTokenRecord = await this.prisma.refreshToken.create({
+      data: {
+        userId,
+        tokenHash: '',
+        expiresAt,
+      },
     });
+
+    // 2. Generate tokens, include refreshTokenId (tokenId) in refresh token payload
+    const payload = { sub: userId, username, role };
+    const refreshPayload = { sub: userId, tokenId: refreshTokenRecord.id };
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: process.env.JWT_SECRET as string,
+        expiresIn: (process.env.JWT_EXPIRES_IN || '15m') as any,
+      }),
+      this.jwtService.signAsync(refreshPayload, {
+        secret: process.env.JWT_REFRESH_SECRET as string,
+        expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as any,
+      }),
+    ]);
+
+    // 3. Update the token record with a hash of the refresh token
+    const tokenHash = await bcrypt.hash(refreshToken, 10);
+    await this.prisma.refreshToken.update({
+      where: { id: refreshTokenRecord.id },
+      data: { tokenHash },
+    });
+
+    // 4. Asynchronously clean up old/expired tokens for this user to prevent DB bloat
+    this.prisma.refreshToken
+      .deleteMany({
+        where: {
+          userId,
+          OR: [
+            { expiresAt: { lt: new Date() } },
+            { revokedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } }, // Remove tokens revoked more than 24h ago
+          ],
+        },
+      })
+      .catch(() => {
+        // Fail silently
+      });
+
+    return { accessToken, refreshToken };
   }
 }

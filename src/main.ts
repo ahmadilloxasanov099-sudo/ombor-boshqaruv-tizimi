@@ -24,7 +24,7 @@ async function bootstrap() {
 
   app.enableCors();
 
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
       .setTitle('Ombor boshqaruv tizimi API')
       .setDescription('Warehouse management system')
