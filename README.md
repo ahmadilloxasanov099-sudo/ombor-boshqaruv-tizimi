@@ -1,908 +1,233 @@
-================================================================
-     OMBOR BOSHQARUV TIZIMI — TO'LIQ LOYHA TAVSIFI
-     NestJS + PostgreSQL + Prisma
-================================================================
-Tayyorlangan: 2026
-Maqsad: Davlat idorasi uchun jihoz va material boshqaruvi
-================================================================
+# Ombor Boshqaruv Tizimi (Warehouse Management System) - Backend Tavsifi & Qo'llanmasi
 
+Ushbu loyiha ombor zaxiralari, jihozlar, xodimlar va bo'limlar o'rtasidagi barcha operatsiyalarni boshqarish uchun mo'ljallangan **NestJS** va **Prisma ORM** (PostgreSQL) asosidagi Senior darajadagi backend tizimidir.
 
-================================================================
-  QISM 1 — TIZIM HAQIDA UMUMIY MA'LUMOT
-================================================================
+---
 
-Tizim 3 daraja foydalanuvchi bilan ishlaydi:
+## 🛠️ Texnologiyalar To'plami (Tech Stack)
 
-  ADMIN      — Hamma narsani ko'radi va boshqaradi
-  OMBORCHI   — Operatsiyalarni bajaradi, hisobotlarni ko'radi
-  XODIM      — Faqat o'zidagi jihozlarni ko'radi
+* **Freymvork:** NestJS (v11.x)
+* **Ma'lumotlar bazasi ORM:** Prisma ORM (PostgreSQL bazasi bilan)
+* **Xavfsizlik & Autentifikatsiya:** Passport.js (JWT va Local strategiyalar), bcrypt
+* **Hujjatlashtirish:** Swagger UI (`/docs` manzilida)
+* **Boshqa paketlar:** `nodemailer`, `class-validator`, `class-transformer`
 
-Mahsulotning 3 turi bor, har turi boshqacha ishlaydi:
+---
 
-  ASSET      — Xodimga beriladi, qaytarib olinadi
-               Misol: noutbuk, telefon, zoom kamera, flesh-disk
+## 📂 Loyiha Tuzilishi (Project Structure)
 
-  CONSUMABLE — Bo'limga beriladi, sarflanib ketadi, qaytmaydi
-               Misol: A4 qog'oz, ichimlik suvi, ruchka, papka
+Loyiha modulli arxitekturaga ega:
+* [src/app.module.ts](file:///C:/Users/User/Desktop/work/loyha/back/src/app.module.ts) — Asosiy modul (barcha feature modullarini, shu jumladan `MailModule`ni global bog'laydi).
+* [src/main.ts](file:///C:/Users/User/Desktop/work/loyha/back/src/main.ts) — Ilovani ishga tushirish fayli (API prefiksi: `api/v1`, global filterlar va interceptorlar).
+* [src/modules/](file:///C:/Users/User/Desktop/work/loyha/back/src/modules) — Biznes mantiq modullari:
+  * **auth**: Login, logout, refresh token rotation (CPU DoS va xotira bloatidan himoyalangan O(1) tokenId tizimi) hamda bootstrap vaqtida default foydalanuvchilar seeding xizmati.
+  * **users**: Xodimlar boshqaruvi, statuslarni o'zgartirish, tranzaksion token bekor qilish va biriktirilgan jihozlar ro'yxati.
+  * **departments**: Tashkilot bo'limlarini boshqarish (bo'lim nomi takrorlanmasligi tekshiruvi, xodimlar va shared jihozlar ro'yxati).
+  * **products**: Mahsulotlar katalogini boshqarish (omborda yoki bo'limda qoldiq bo'lsa o'chirishni taqiqlovchi xavfsiz soft delete).
+  * **inventory**: Ombor qoldiqlari, minimal darajalar, ommaviy Excel kirim qilish hamda zaxirani UTF-8 BOM bilan CSV eksport qilish.
+  * **operations**: Kirim (Stock In), Xodimga berish/qaytarish, Bo'limga material berish/qaytarish, Bo'limga umumiy jihoz biriktirish (`ASSIGN_TO_DEPT`) va qaytarish (`RETURN_FROM_DEPT`), hamda hisobdan chiqarish (Write-off). Barcha operatsiyalar Prisma tranzaksiyalari orqali himoyalangan.
+  * **stats**: Dashboard ko'rsatkichlari, oylik dinamika, bo'lim va xodimlar yuklamasi hamda oylik o'sish dinamikasi solishtirish (Bu oy vs O'tgan oy).
+  * **history**: Harakatlar tarixi arxivi (Rol cheklovlari, jihoz bo'yicha qidirish va CSV audit eksport).
+  * **nodemailer (mail)**: Kam qolgan tovarlar uchun avtomatik HTML formatidagi email ogohlantirish xizmati.
 
-  SHARED     — Bo'limga biriktiriladi, qaytarib olinishi mumkin
-               Misol: printer, skaner, MFU, proyektor
+---
 
-Tashkilot tuzilishi:
+## 🗄️ Ma'lumotlar Bazasi Sxemasi (Database Schema)
 
-  Barcha bo'limlar teng darajada — ierarxiya yo'q.
-  Har bir xodim bitta bo'limga biriktiriladi.
-  1 ta markaziy ombor — barcha bo'limlar shu ombordan oladi.
+Ma'lumotlar sxemasi [prisma/schema.prisma](file:///C:/Users/User/Desktop/work/loyha/back/prisma/schema.prisma) faylida tasvirlangan. Asosiy aloqalar quyidagicha:
 
+```mermaid
+erDiagram
+    DEPARTMENT ||--o{ USER : "users"
+    DEPARTMENT ||--o{ DEPARTMENT-ASSET : "assets"
+    DEPARTMENT ||--o{ ASSIGNMENT : "dept-assignments"
+    USER ||--o{ ASSIGNMENT : "user-assignments"
+    USER ||--o{ REFRESH-TOKEN : "tokens"
+    PRODUCT ||--o| INVENTORY : "stock"
+    PRODUCT ||--o{ ASSET : "assets"
+    PRODUCT ||--o{ DEPARTMENT-ASSET : "dept-assets"
+    ASSET ||--o{ ASSIGNMENT : "assignments"
+    OPERATION ||--|| PRODUCT : "operates"
+```
 
-================================================================
-  QISM 2 — BARCHA FUNKSIONALIKLAR (11 TA)
-================================================================
+### 1. Mahsulot Turlari (ProductType)
+* **BERILADIGAN:** Har bir dona alohida inventar raqami bilan jismoniy kuzatiladigan jihozlar (noutbuk, printer, monitor). Ular xodimlarga yoki bo'limga umumiy foydalanishga (`Assignment`) biriktiriladi.
+* **SARFLANADIGAN:** Umumiy miqdorda o'lchanadigan materiallar (qog'oz, ruchka, batareya). Ular bo'limlarga (`DepartmentAsset`) o'tkaziladi va qaytarilmaydi (yoki qoldiq qaytariladi).
 
-------------------------------------------------------------
-  F-01. BO'LIMLAR BOSHQARUVI
-------------------------------------------------------------
-Nima qiladi:
-  Bo'limlarni (Department) yaratadi va boshqaradi.
-  Har bir bo'limning nomi va kodi bo'ladi.
+### 2. Operatsiyalar Turlari (OperationType)
+* `STOCK_IN` — Omborga kirim qilish.
+* `GIVE_TO_DEPT` — Bo'limga sarflanadigan material berish.
+* `RETURN_FROM_DEPT` — Bo'limdan material yoki umumiy jihozni omborga qaytarish.
+* `GIVE_TO_USER` — Xodimga jihoz biriktirish.
+* `RETURN_FROM_USER` — Xodimdan jihozni omborga qaytarib olish.
+* `TRANSFER_USER` — Jihozni bir xodimdan boshqasiga o'tkazish.
+* `ASSIGN_TO_DEPT` — Ombordan bo'limga umumiy foydalanish uchun jihoz biriktirish.
+* `WRITE_OFF` — Jihoz yoki materialni hisobdan chiqarish (utilizatsiya).
 
-Imkoniyatlar:
-  - Yangi bo'lim qo'shish
-  - Tahrirlash (nom, kod, tavsif)
-  - O'chirish (faqat bo'sh bo'lsa — xodim va jihozi yo'q)
-  - Barcha bo'limlar ro'yxatini olish
-  - Bo'lim statistikasini ko'rish (xodim soni, jihoz soni)
+---
 
-Kim foydalanadi: faqat ADMIN
+## 🔧 Amalga Oshirilgan Senior Yaxshilanishlar (Senior Improvements)
 
+1. **Refresh Token Rotation (DoS Himoyasi):**
+   * bcrypt solishtirishdagi loop orqali yuzaga keladigan CPU DoS zaifligi bartaraf etildi. JWT refresh tokeniga `tokenId` bog'lanib, bazadan qidirish tezligi O(1) ga tushirildi. Tokenlar muddati tugashi bilan avtomatik tarzda tozalanadi.
+2. **Kadr (`KADR`) Roli Qo'shildi:**
+   * Tizimga Kadrlar bo'limi xodimi (`KADR`) roli kiritildi. Ularga faqat o'qish (GET) huquqi berildi va xodimlar qarzdorligini (bo'shash arizasida jihozlarni tekshirish uchun) kuzatish imkoniyati yaratildi.
+3. **Avtomatik Jihoz Yaratish (Eager Asset Creation - Kirimda):**
+   * Jihozlar kirim qilinayotgan vaqtda (`stock-in` va `bulk-stock-in` operatsiyalarida) inventar va seriya raqamlari massivi orqali barcha `Asset` obyektlari bitta tranzaksiya ichida avtomatik ravishda yaratiladi.
+4. **Bo'lim Umumiy Jihozlari (Shared Assets - F-07):**
+   * Printer va skaner kabi jihozlarni bo'limga biriktirish (`ASSIGN_TO_DEPT`) va qaytarish (`RETURN_FROM_DEPT`) to'liq integratsiya qilindi.
+5. **Mahsulot O'chirishdagi Xavfsizlik:**
+   * Mahsulot katalogini o'chirishda omborda (`Inventory.quantity > 0`) yoki bo'limlarda (`DepartmentAsset.quantity > 0`) zaxira qoldig'i mavjud bo'lsa, tizim o'chirishni taqiqlaydigan qilindi.
+6. **Eksport Tizimi (Excel/CSV Reports):**
+   * Amallar tarixi va Ombor zaxiralari / Biriktirilgan jihozlar holatini Excelda to'g'ri ochilishi uchun UTF-8 BOM (`\ufeff`) bilan CSV formatida yuklab olish endpointlari yaratildi.
+7. **Email Ogohlantirish Tizimi (Nodemailer):**
+   * `MailModule` tizimga to'liq ulandi. Ombordagi mahsulot miqdori minimal belgilangan darajadan (`minLevel`) kamayib ketganda, tizim orqa fonda (asinxron) mas'ul omborchiga chiroyli HTML ogohlantirish xatini yuboradi.
+8. **Statistika va Tahliliy Ko'rsatkichlar (Real-Time Stats):**
+   * Ombor qiymati real-vaqtda joriy zaxira bo'yicha hisoblanadi. Oyma-oy solishtirish (foiz ko'rsatkichlarida) va bo'limlarning umumiy foydalanayotgan jihozlari qiymati (`totalAssetValue`) qo'shildi.
 
-------------------------------------------------------------
-  F-02. FOYDALANUVCHILAR BOSHQARUVI
-------------------------------------------------------------
-Nima qiladi:
-  Xodimlarni tizimga qo'shadi, tahrirlaydi, bloklaydi.
-  Xodim qaysi bo'limda ekanligi belgilanadi.
-  Rol tayinlanadi.
+---
 
-Imkoniyatlar:
-  - Xodim qo'shish (bo'lim va rol bilan)
-  - Tahrirlash (ism, bo'lim, rol, telefon, lavozim)
-  - Faollashtirish / Bloklash
-  - O'chirish (soft delete — tarix saqlanadi)
-  - Xodim ro'yxatini olish (qidiruv, pagination)
-  - Xodimda hozir nima borligini ko'rish
-  - Xodimning harakatlar tarixini ko'rish
+## 🚀 API Endpointlar Ro'yxati (Jami: 48 ta)
 
-Kim foydalanadi: faqat ADMIN
-
-
-------------------------------------------------------------
-  F-03. MAHSULOTLAR KATALOGI
-------------------------------------------------------------
-Nima qiladi:
-  Barcha mahsulot va materiallar katalogini yuritadi.
-  Har bir mahsulotning turi (ASSET/CONSUMABLE/SHARED)
-  belgilanadi va shu turga qarab operatsiyalar ruxsat etiladi.
-
-Imkoniyatlar:
-  - Mahsulot qo'shish (nom, kod, tur, o'lchov birligi)
-  - Tahrirlash
-  - O'chirish (soft delete — tarix saqlanadi)
-  - Ro'yxat olish (qidiruv, tur bo'yicha filtri, pagination)
-  - Bitta mahsulot tafsilotini ko'rish
-  - Mahsulot harakatlari tarixini ko'rish
-
-Kim foydalanadi: ADMIN to'liq, OMBORCHI ko'rish, XODIM ko'rish
-
-
-------------------------------------------------------------
-  F-04. MARKAZIY OMBOR BOSHQARUVI
-------------------------------------------------------------
-Nima qiladi:
-  Yagona markaziy omborni yuritadi.
-  Mahsulot kirim qilinadi, chiqim amalga oshiriladi.
-  Minimal daraja belgilanadi — shu darajadan tushsa ogohlantirish.
-
-Imkoniyatlar:
-  - Omborga kirim qo'shish (STOCK_IN)
-  - Joriy ombor holatini ko'rish
-  - Mahsulot minimal darajasini belgilash
-  - Kam qolgan mahsulotlar ro'yxatini olish
-  - Ombor harakatlari tarixini ko'rish
-
-Kim foydalanadi: ADMIN to'liq, OMBORCHI to'liq, XODIM ko'rish
-
-
-------------------------------------------------------------
-  F-05. JIHOZ BERISH VA QAYTARISH (ASSET)
-------------------------------------------------------------
-Nima qiladi:
-  Noutbuk, telefon kabi jihozlarni xodimga rasman beradi.
-  Har bir jihoz inventar raqami va seriya raqami bilan kuzatiladi.
-  Xodim mas'ul hisoblanadi. Qaytarish va o'tkazish mumkin.
-
-Operatsiyalar:
-  GIVE_TO_USER     — Ombordan xodimga jihoz berish
-  RETURN_FROM_USER — Xodimdan omborga qaytarish
-  TRANSFER_USER    — Bir xodimdan ikkinchisiga o'tkazish
-
-Har bir operatsiyada bir vaqtda:
-  → Ombor miqdori yangilanadi
-  → Xodim jihozi yangilanadi (Assignment)
-  → Tarixga yoziladi
-  (Hammasi bitta transaksiyada — xato bo'lsa hamma narsa bekor)
-
-Kim foydalanadi: ADMIN, OMBORCHI
-
-
-------------------------------------------------------------
-  F-06. MATERIAL SARFLASH (CONSUMABLE)
-------------------------------------------------------------
-Nima qiladi:
-  A4 qog'oz, suv, ruchka kabi materiallarni bo'limga beradi.
-  Bo'lim sarflab yuboradi — qaytarish yo'q.
-  Bo'lim stokida qoldig'i kuzatiladi (DepartmentAsset).
-
-Operatsiyalar:
-  GIVE_TO_DEPT — Ombordan bo'limga material berish
-
-Har bir operatsiyada:
-  → Ombor miqdori kamayadi
-  → Bo'lim stoki ko'payadi
-  → Tarixga yoziladi
-  (Hammasi bitta transaksiyada)
-
-Kim foydalanadi: ADMIN, OMBORCHI
-
-
-------------------------------------------------------------
-  F-07. BO'LIM UMUMIY JIHOZI (SHARED)
-------------------------------------------------------------
-Nima qiladi:
-  Printer, skaner, MFU kabi jihozlarni bo'limga birikтиради.
-  Bo'lim xodimlari almashib ishlatadi.
-  Qaytarish mumkin (eskirsa, yangi kelsa).
-
-Operatsiyalar:
-  ASSIGN_TO_DEPT   — Ombordan bo'limga jihoz berish
-  RETURN_FROM_DEPT — Bo'limdan omborga qaytarish
-
-Har bir operatsiyada:
-  → Ombor miqdori yangilanadi
-  → Bo'lim stoki yangilanadi (DepartmentAsset)
-  → Tarixga yoziladi
-  (Hammasi bitta transaksiyada)
-
-Kim foydalanadi: ADMIN, OMBORCHI
-
-
-------------------------------------------------------------
-  F-08. TO'LIQ AUDIT TARIXI
-------------------------------------------------------------
-Nima qiladi:
-  Tizimda bajarilgan barcha harakatlarni saqlaydi.
-  Kim, nima, qachon, kim bajardi — hammasi yoziladi.
-
-Imkoniyatlar:
-  - Barcha tarixni ko'rish (pagination)
-  - Xodim bo'yicha filtri
-  - Mahsulot bo'yicha filtri
-  - Operatsiya turi bo'yicha filtri
-  - Sana oralig'i bo'yicha filtri
-  - Bo'lim bo'yicha filtri
-
-Kim foydalanadi: ADMIN va OMBORCHI barchasini, XODIM faqat o'zinikini
-
-
-------------------------------------------------------------
-  F-09. STATISTIKA VA HISOBOTLAR
-------------------------------------------------------------
-Nima qiladi:
-  Rahbariyat va omborchi uchun umumiy ko'rsatkichlar.
-  Qaysi bo'limda nima bor, kim ko'p oldi, nima kam qoldi.
-
-Imkoniyatlar:
-  - Umumiy overview (mahsulot soni, xodim soni, ombor holati)
-  - Bo'lim bo'yicha jihozlar taqqoslash
-  - Eng ko'p sarflanadigan mahsulotlar
-  - Kam qolgan mahsulotlar ro'yxati
-  - Oy bo'yicha sarflash dinamikasi
-  - Xodim bo'yicha jihoz yuklamasi
-
-Kim foydalanadi: ADMIN, OMBORCHI
-
-
-------------------------------------------------------------
-  F-10. INVENTARIZATSIYA
-------------------------------------------------------------
-Nima qiladi:
-  Xodim tashkilotni tark etganda yoki bo'lim o'zgarganda
-  uning barcha jihozlarini topshirish jarayoni.
-
-Imkoniyatlar:
-  - Xodimda nima bor — to'liq ro'yxat
-  - Ommaviy qaytarish (bitta so'rovda hammasi)
-  - Boshqa xodimga ommaviy o'tkazish
-  - Inventarizatsiya sanasi va bajaruvchi saqlanadi
-
-Kim foydalanadi: ADMIN, OMBORCHI
-
-
-------------------------------------------------------------
-  F-11. OGOHLANTIRISHLAR (LOW STOCK ALERT)
-------------------------------------------------------------
-Nima qiladi:
-  Ombordagi mahsulot minimal darajadan tushganda
-  tizim ogohlantiradi.
-
-Imkoniyatlar:
-  - Kam qolgan mahsulotlar ro'yxati (real-time)
-  - Tanqislik miqdorini ko'rish (minLevel - quantity)
-
-Kim foydalanadi: ADMIN, OMBORCHI
-
-
-================================================================
-  QISM 3 — BARCHA API ENDPOINTLAR
-================================================================
-
-Jami: 42 ta endpoint
-Base URL: /api/v1
+Base URL: `/api/v1`
 
 Rol belgilari:
-  [A]  = faqat ADMIN
-  [AO] = ADMIN + OMBORCHI
-  [ALL]= Barcha (ADMIN + OMBORCHI + XODIM)
-  [*]  = Roli bo'yicha cheklangan (quyida izoh)
-
-------------------------------------------------------------
-  AUTH — 5 ta endpoint (To'g'ri)
-------------------------------------------------------------
-
-  POST   /auth/login               [ALL]  Tizimga kirish
-  POST   /auth/refresh             [ALL]  Token yangilash
-  POST   /auth/logout              [ALL]  Tizimdan chiqish
-  GET    /auth/me                  [ALL]  O'z profilini ko'rish
-  PUT    /auth/change-password     [ALL]  Parolni o'zgartirish
-
-
-------------------------------------------------------------
-  DEPARTMENTS — 6 ta endpoint
-------------------------------------------------------------
-
-  GET    /departments              [A]    Barcha bo'limlar ro'yxati
-  GET    /departments/:id          [A]    Bitta bo'lim
-  GET    /departments/:id/stats    [AO]   Bo'lim statistikasi
-  POST   /departments              [A]    Yangi bo'lim qo'shish
-  PUT    /departments/:id          [A]    Tahrirlash
-  DELETE /departments/:id          [A]    O'chirish (bo'sh bo'lsa)
-
-
-------------------------------------------------------------
-  USERS — 7 ta endpoint
-------------------------------------------------------------
-
-  GET    /users                    [A]    Ro'yxat (search, page, limit, deptId)
-  GET    /users/:id                [A]    Bitta xodim ma'lumoti
-  GET    /users/:id/assignments    [AO]   Xodimda hozir nima bor
-  GET    /users/:id/history        [*]    Xodim tarixi (XODIM faqat o'ziniki)
-  POST   /users                    [A]    Yangi xodim qo'shish
-  PUT    /users/:id                [A]    Tahrirlash
-  PATCH  /users/:id/status         [A]    Faollashtirish yoki bloklash
-
-
-------------------------------------------------------------
-  PRODUCTS — 7 ta endpoint
-------------------------------------------------------------
-
-  GET    /products                 [ALL]  Ro'yxat (search, type, page, limit)
-  GET    /products/:id             [ALL]  Bitta mahsulot
-  GET    /products/:id/history     [AO]   Mahsulot harakatlari tarixi
-  GET    /products/low-stock       [AO]   Kam qolgan mahsulotlar
-  POST   /products                 [A]    Yangi mahsulot qo'shish
-  PUT    /products/:id             [A]    Tahrirlash
-  DELETE /products/:id             [A]    O'chirish (soft delete)
-
-
-------------------------------------------------------------
-  INVENTORY — 5 ta endpoint
-------------------------------------------------------------
-
-  GET    /inventory                [AO]   Barcha ombor holati
-  GET    /inventory/:productId     [AO]   Bitta mahsulot miqdori
-  POST   /inventory/stock-in       [AO]   Omborga kirim qo'shish
-  PATCH  /inventory/min-level      [AO]   Minimal darajani belgilash
-  GET    /inventory/low-stock      [AO]   Kam qolgan mahsulotlar
-
-
-------------------------------------------------------------
-  OPERATIONS — 6 ta endpoint
-------------------------------------------------------------
-
-  POST   /operations/give-to-user       [AO]  Xodimga jihoz berish
-         Body: { userId, assetId, note?, documentNumber? }
-
-  POST   /operations/return-from-user   [AO]  Xodimdan jihoz qaytarish
-         Body: { userId, assetId, note?, documentNumber? }
-
-  POST   /operations/transfer-user      [AO]  Xodimdan xodimga o'tkazish
-         Body: { fromUserId, toUserId, assetId, note?, documentNumber? }
-
-  POST   /operations/give-to-dept       [AO]  Bo'limga material berish
-         Body: { departmentId, productId, quantity, note?, documentNumber? }
-
-  POST   /operations/assign-to-dept     [AO]  Bo'limga umumiy jihoz berish
-         Body: { departmentId, productId, quantity, note?, documentNumber? }
-
-  POST   /operations/return-from-dept   [AO]  Bo'limdan jihoz qaytarish
-         Body: { departmentId, productId, quantity, note?, documentNumber? }
-
-
-------------------------------------------------------------
-  HISTORY — 1 ta endpoint (filter parametrlar bilan)
-------------------------------------------------------------
-
-  GET    /history                  [*]   Tarix ro'yxati
-
-  Query parametrlar:
-    ?operationType=GIVE_TO_USER    Operatsiya turi bo'yicha
-    ?userId=uuid                   Xodim bo'yicha
-    ?departmentId=uuid             Bo'lim bo'yicha
-    ?productId=uuid                Mahsulot bo'yicha
-    ?from=2025-01-01               Boshlanish sanasi
-    ?to=2025-12-31                 Tugash sanasi
-    ?page=1&limit=20               Pagination
-
-  Izoh: XODIM faqat o'z userId bo'yicha so'ray oladi.
-        Boshqa userId kiritsа — 403 Forbidden qaytadi.
-
-
-------------------------------------------------------------
-  STATS — 5 ta endpoint
-------------------------------------------------------------
-
-  GET    /stats/overview           [AO]  Umumiy ko'rsatkichlar
-  GET    /stats/by-department      [AO]  Bo'lim bo'yicha jihozlar
-  GET    /stats/by-product         [AO]  Mahsulot bo'yicha sarflash
-  GET    /stats/low-stock          [AO]  Kam qolgan mahsulotlar
-  GET    /stats/monthly            [AO]  Oy bo'yicha sarflash dinamikasi
-
-
-------------------------------------------------------------
-  JAMI ENDPOINT SONI
-------------------------------------------------------------
-
-  Auth          →   5 ta
-  Departments   →   6 ta
-  Users         →   7 ta
-  Products      →   7 ta
-  Inventory     →   5 ta
-  Operations    →   6 ta
-  History       →   1 ta
-  Stats         →   5 ta
-  --------------------------------
-  JAMI          →  42 ta endpoint
-
-
-================================================================
-  QISM 4 — NESTJS MODULLAR TUZILISHI
-================================================================
-
-Jami: 10 ta modul + umumiy qismlar (guards, pipes, interceptors)
-
-------------------------------------------------------------
-  MODUL 1: AppModule (asosiy modul)
-------------------------------------------------------------
-Fayl: src/app.module.ts
-
-Vazifasi:
-  Barcha modullarni birlashtiradi.
-  Global konfiguratsiya, database ulanishi, global guard.
-
-Ichida:
-  - ConfigModule (global, .env o'qish)
-  - PrismaModule (global, database ulanish)
-  - Barcha feature modullar import qilinadi
-
-
-------------------------------------------------------------
-  MODUL 2: PrismaModule
-------------------------------------------------------------
-Fayl: src/prisma/prisma.module.ts
-      src/prisma/prisma.service.ts
-
-Vazifasi:
-  Prisma Client ni global singleton sifatida beradi.
-  Barcha boshqa modullar shu servisdan foydalanadi.
-  onModuleInit da database ga ulanadi.
-  onModuleDestroy da ulanishni yopadi.
-
-Export qiladi: PrismaService
-
-
-------------------------------------------------------------
-  MODUL 3: AuthModule
-------------------------------------------------------------
-Fayl: src/auth/auth.module.ts
-      src/auth/auth.controller.ts
-      src/auth/auth.service.ts
-      src/auth/strategies/jwt.strategy.ts
-      src/auth/strategies/refresh.strategy.ts
-      src/auth/guards/jwt-auth.guard.ts
-      src/auth/guards/roles.guard.ts
-      src/auth/decorators/roles.decorator.ts
-      src/auth/decorators/current-user.decorator.ts
-      src/auth/dto/login.dto.ts
-      src/auth/dto/change-password.dto.ts
-
-Vazifasi:
-  Login, logout, token yangilash, parol o'zgartirish.
-  JWT access token (15 daqiqa) va refresh token (30 kun).
-  JwtStrategy — har so'rovda tokenni tekshiradi.
-  RolesGuard — rol asosida kirish nazorati.
-
-Endpointlar:
-  POST /auth/login
-  POST /auth/refresh
-  POST /auth/logout
-  GET  /auth/me
-  PUT  /auth/change-password
-
-Global export qiladi: JwtAuthGuard, RolesGuard
-
-
-------------------------------------------------------------
-  MODUL 4: DepartmentsModule
-------------------------------------------------------------
-Fayl: src/departments/departments.module.ts
-      src/departments/departments.controller.ts
-      src/departments/departments.service.ts
-      src/departments/dto/create-department.dto.ts
-      src/departments/dto/update-department.dto.ts
-
-Vazifasi:
-  Bo'limlarni boshqaradi.
-  Bo'lim statistikasini hisoblaydi
-  (xodim soni, jihoz soni, material miqdori).
-
-Endpointlar:
-  GET    /departments
-  GET    /departments/:id
-  GET    /departments/:id/stats
-  POST   /departments
-  PUT    /departments/:id
-  DELETE /departments/:id
-
-
-------------------------------------------------------------
-  MODUL 5: UsersModule
-------------------------------------------------------------
-Fayl: src/users/users.module.ts
-      src/users/users.controller.ts
-      src/users/users.service.ts
-      src/users/dto/create-user.dto.ts
-      src/users/dto/update-user.dto.ts
-      src/users/dto/user-query.dto.ts
-
-Vazifasi:
-  Xodimlarni boshqaradi.
-  Qidiruv (ILIKE orqali).
-  Xodim jihozlari va tarixini beradi.
-  Soft delete (deletedAt).
-
-Endpointlar:
-  GET    /users
-  GET    /users/:id
-  GET    /users/:id/assignments
-  GET    /users/:id/history
-  POST   /users
-  PUT    /users/:id
-  PATCH  /users/:id/status
-
-
-------------------------------------------------------------
-  MODUL 6: ProductsModule
-------------------------------------------------------------
-Fayl: src/products/products.module.ts
-      src/products/products.controller.ts
-      src/products/products.service.ts
-      src/products/dto/create-product.dto.ts
-      src/products/dto/update-product.dto.ts
-      src/products/dto/product-query.dto.ts
-
-Vazifasi:
-  Mahsulotlar katalogini yuritadi.
-  productType bo'yicha filterlash.
-  Soft delete (deletedAt).
-  Mahsulot tarixini beradi.
-
-Endpointlar:
-  GET    /products
-  GET    /products/:id
-  GET    /products/:id/history
-  GET    /products/low-stock
-  POST   /products
-  PUT    /products/:id
-  DELETE /products/:id
-
-
-------------------------------------------------------------
-  MODUL 7: InventoryModule
-------------------------------------------------------------
-Fayl: src/inventory/inventory.module.ts
-      src/inventory/inventory.controller.ts
-      src/inventory/inventory.service.ts
-      src/inventory/dto/stock-in.dto.ts
-      src/inventory/dto/set-min-level.dto.ts
-
-Vazifasi:
-  Markaziy ombor holatini ko'rsatadi va kirim qo'shadi.
-  Minimal daraja sozlaydi.
-  Kam qolgan mahsulotlarni topadi.
-  OperationsModule dan chaqiriladi (inventory yangilash).
-
-Endpointlar:
-  GET    /inventory
-  GET    /inventory/:productId
-  POST   /inventory/stock-in
-  PATCH  /inventory/min-level
-  GET    /inventory/low-stock
-
-
-------------------------------------------------------------
-  MODUL 8: OperationsModule
-------------------------------------------------------------
-Fayl: src/operations/operations.module.ts
-      src/operations/operations.controller.ts
-      src/operations/operations.service.ts
-      src/operations/dto/give-to-user.dto.ts
-      src/operations/dto/return-from-user.dto.ts
-      src/operations/dto/transfer-user.dto.ts
-      src/operations/dto/give-to-dept.dto.ts
-      src/operations/dto/assign-to-dept.dto.ts
-      src/operations/dto/return-from-dept.dto.ts
-
-Vazifasi:
-  BARCHA operatsiyalarni bajaradi.
-  Har bir operatsiya Prisma $transaction ichida ishlaydi.
-  productType tekshiradi — noto'g'ri operatsiyaga 400 qaytadi.
-  Ombor miqdori yetarli emasligida 400 qaytadi.
-  Tarixga yozadi (har doim).
-
-Endpointlar:
-  POST   /operations/give-to-user
-  POST   /operations/return-from-user
-  POST   /operations/transfer-user
-  POST   /operations/give-to-dept
-  POST   /operations/assign-to-dept
-  POST   /operations/return-from-dept
-
-Bu modul eng muhim modul — barcha tranzaksiyalar shu yerda.
-
-
-------------------------------------------------------------
-  MODUL 9: HistoryModule
-------------------------------------------------------------
-Fayl: src/history/history.module.ts
-      src/history/history.controller.ts
-      src/history/history.service.ts
-      src/history/dto/history-query.dto.ts
-
-Vazifasi:
-  Tarixni filtri bilan beradi.
-  XODIM faqat o'z tarixini ko'ra oladi (guard tekshiradi).
-  Pagination (page + limit).
-  Sana oralig'i, operatsiya turi, xodim, mahsulot filtrlari.
-
-Endpointlar:
-  GET    /history
-
-
-------------------------------------------------------------
-  MODUL 10: StatsModule
-------------------------------------------------------------
-Fayl: src/stats/stats.module.ts
-      src/stats/stats.controller.ts
-      src/stats/stats.service.ts
-
-Vazifasi:
-  Hisobot va statistika so'rovlarini bajaradi.
-  Umumiy overview, bo'lim bo'yicha, mahsulot bo'yicha,
-  kam qolganlar, oylik dinamika.
-
-Endpointlar:
-  GET    /stats/overview
-  GET    /stats/by-department
-  GET    /stats/by-product
-  GET    /stats/low-stock
-  GET    /stats/monthly
-
-
-------------------------------------------------------------
-  UMUMIY (SHARED) QISMLAR
-------------------------------------------------------------
-
-src/common/guards/
-  jwt-auth.guard.ts     — Har so'rovda JWT tekshiradi
-  roles.guard.ts        — Rol asosida kirish nazorati
-
-src/common/decorators/
-  roles.decorator.ts        — @Roles('ADMIN', 'OMBORCHI')
-  current-user.decorator.ts — @CurrentUser() — so'rovdan user oladi
-
-src/common/filters/
-  http-exception.filter.ts  — Xato xabarlarini formatlaydi
-
-src/common/interceptors/
-  response.interceptor.ts   — Javob formatini standartlashtiradi
-                              { success, data, message, timestamp }
-
-src/common/dto/
-  pagination.dto.ts     — page, limit uchun umumiy DTO
-  date-range.dto.ts     — from, to uchun umumiy DTO
-
-
-================================================================
-  QISM 5 — LOYHA PAPKALAR TUZILISHI
-================================================================
-
-src/
-├── main.ts                         Ilovani ishga tushiradi
-├── app.module.ts                   Asosiy modul
-│
-├── prisma/
-│   ├── prisma.module.ts
-│   └── prisma.service.ts
-│
-├── auth/
-│   ├── auth.module.ts
-│   ├── auth.controller.ts
-│   ├── auth.service.ts
-│   ├── strategies/
-│   │   ├── jwt.strategy.ts
-│   │   └── refresh.strategy.ts
-│   ├── guards/
-│   │   ├── jwt-auth.guard.ts
-│   │   └── roles.guard.ts
-│   ├── decorators/
-│   │   ├── roles.decorator.ts
-│   │   └── current-user.decorator.ts
-│   └── dto/
-│       ├── login.dto.ts
-│       └── change-password.dto.ts
-│
-├── departments/
-│   ├── departments.module.ts
-│   ├── departments.controller.ts
-│   ├── departments.service.ts
-│   └── dto/
-│       ├── create-department.dto.ts
-│       └── update-department.dto.ts
-│
-├── users/
-│   ├── users.module.ts
-│   ├── users.controller.ts
-│   ├── users.service.ts
-│   └── dto/
-│       ├── create-user.dto.ts
-│       ├── update-user.dto.ts
-│       └── user-query.dto.ts
-│
-├── products/
-│   ├── products.module.ts
-│   ├── products.controller.ts
-│   ├── products.service.ts
-│   └── dto/
-│       ├── create-product.dto.ts
-│       ├── update-product.dto.ts
-│       └── product-query.dto.ts
-│
-├── inventory/
-│   ├── inventory.module.ts
-│   ├── inventory.controller.ts
-│   ├── inventory.service.ts
-│   └── dto/
-│       ├── stock-in.dto.ts
-│       └── set-min-level.dto.ts
-│
-├── operations/
-│   ├── operations.module.ts
-│   ├── operations.controller.ts
-│   ├── operations.service.ts
-│   └── dto/
-│       ├── give-to-user.dto.ts
-│       ├── return-from-user.dto.ts
-│       ├── transfer-user.dto.ts
-│       ├── give-to-dept.dto.ts
-│       ├── assign-to-dept.dto.ts
-│       └── return-from-dept.dto.ts
-│
-├── history/
-│   ├── history.module.ts
-│   ├── history.controller.ts
-│   ├── history.service.ts
-│   └── dto/
-│       └── history-query.dto.ts
-│
-├── stats/
-│   ├── stats.module.ts
-│   ├── stats.controller.ts
-│   └── stats.service.ts
-│
-└── common/
-    ├── guards/
-    │   ├── jwt-auth.guard.ts
-    │   └── roles.guard.ts
-    ├── decorators/
-    │   ├── roles.decorator.ts
-    │   └── current-user.decorator.ts
-    ├── filters/
-    │   └── http-exception.filter.ts
-    ├── interceptors/
-    │   └── response.interceptor.ts
-    └── dto/
-        ├── pagination.dto.ts
-        └── date-range.dto.ts
-
-
-================================================================
-  QISM 6 — API JAVOB FORMATI (STANDART)
-================================================================
-
-Muvaffaqiyatli javob:
-{
-  "success": true,
-  "data": { ... },
-  "message": "Muvaffaqiyatli bajarildi",
-  "timestamp": "2025-06-01T10:30:00.000Z"
-}
-
-Ro'yxat javobi (pagination bilan):
-{
-  "success": true,
-  "data": {
-    "items": [ ... ],
-    "total": 150,
-    "page": 1,
-    "limit": 20,
-    "totalPages": 8
-  }
-}
-
-Xato javobi:
-{
-  "success": false,
-  "error": "INSUFFICIENT_STOCK",
-  "message": "Omborда yetarli miqdor yo'q",
-  "statusCode": 400,
-  "timestamp": "2025-06-01T10:30:00.000Z"
-}
-
-
-================================================================
-  QISM 7 — ROL RUXSATLARI JADVALI (TO'LIQ)
-================================================================
-
-Endpoint                             ADMIN    OMBORCHI    XODIM
------------------------------------  -------  ----------  ----------
-POST /auth/login                       Ha       Ha          Ha
-POST /auth/refresh                     Ha       Ha          Ha
-POST /auth/logout                      Ha       Ha          Ha
-GET  /auth/me                          Ha       Ha          Ha
-PUT  /auth/change-password             Ha       Ha          Ha
-
-GET  /departments                      Ha       Yo'q        Yo'q
-GET  /departments/:id                  Ha       Yo'q        Yo'q
-GET  /departments/:id/stats            Ha       Ha          Yo'q
-POST /departments                      Ha       Yo'q        Yo'q
-PUT  /departments/:id                  Ha       Yo'q        Yo'q
-DELETE /departments/:id                Ha       Yo'q        Yo'q
-
-GET  /users                            Ha       Yo'q        Yo'q
-GET  /users/:id                        Ha       Yo'q        Yo'q
-GET  /users/:id/assignments            Ha       Ha          Yo'q
-GET  /users/:id/history                Ha       Ha          O'ziniki
-POST /users                            Ha       Yo'q        Yo'q
-PUT  /users/:id                        Ha       Yo'q        Yo'q
-PATCH /users/:id/status                Ha       Yo'q        Yo'q
-
-GET  /products                         Ha       Ha          Ha
-GET  /products/:id                     Ha       Ha          Ha
-GET  /products/:id/history             Ha       Ha          Yo'q
-GET  /products/low-stock               Ha       Ha          Yo'q
-POST /products                         Ha       Yo'q        Yo'q
-PUT  /products/:id                     Ha       Yo'q        Yo'q
-DELETE /products/:id                   Ha       Yo'q        Yo'q
-
-GET  /inventory                        Ha       Ha          Yo'q
-GET  /inventory/:productId             Ha       Ha          Yo'q
-POST /inventory/stock-in               Ha       Ha          Yo'q
-PATCH /inventory/min-level             Ha       Ha          Yo'q
-GET  /inventory/low-stock              Ha       Ha          Yo'q
-
-POST /operations/*                     Ha       Ha          Yo'q
-
-GET  /history                          Ha       Ha          O'ziniki
-
-GET  /stats/*                          Ha       Ha          Yo'q
-
-
-================================================================
-  QISM 8 — MUHIM TEXNIK QARORLAR
-================================================================
-
-1. TRANSAKSIYA XAVFSIZLIGI
-   Barcha operatsiyalar Prisma $transaction ichida.
-   Ombor kamayadi + jihoz ko'payadi + tarix yoziladi — hammasi
-   bir vaqtda yoki hech biri. Xato bo'lsa rollback.
-
-2. MAHSULOT TURI TEKSHIRUVI
-   OperationsService da har operatsiya boshlanishida
-   productType tekshiriladi. Printerga GIVE_TO_USER
-   deb bo'lmaydi — 400 Bad Request qaytadi.
-
-3. MIQDOR TEKSHIRUVI
-   Ombordan ko'proq chiqarib bo'lmaydi.
-   Servis darajasida tekshiriladi — yetarli bo'lmasa 400 qaytadi.
-
-4. SOFT DELETE
-   User va Product jadvallarida deletedAt.
-   O'chirilgan narsalar tarixda saqlanadi.
-   So'rovlarda WHERE deletedAt IS NULL qo'shiladi.
-
-5. PAGINATION
-   Barcha ro'yxat endpointlarda page + limit.
-   Default: page=1, limit=20, max limit=100.
-
-6. QIDIRUV
-   ILIKE orqali nom va kod bo'yicha qidiruv.
-
-7. JWT XAVFSIZLIK
-   Access token: 15 daqiqa (qisqa umr)
-   Refresh token: 30 kun, DB da saqlanadi
-   Bloklangan xodim: isActive=false → 401 qaytadi
-   Logout: refresh token revokedAt bilan bekor qilinadi
-
-8. INVENTAR RAQAMI
-   Har bir ASSET jihozi inventoryNumber bilan kuzatiladi.
-   Format: INV-2024-001 (yil + tartib raqami).
-   Barcha operatsiyalarda shu raqam ko'rsatiladi.
-
-9. HUJJAT RAQAMI
-   Operatsiyalarda documentNumber va documentDate saqlanadi.
-   Rasmiy qabul-topshirish aktlarini kuzatish uchun.
-
-10. AUDIT LOG
-    Tizim o'zgarishlarining to'liq tarixi (AuditLog).
-    Kim, qaysi jadvalda, nima o'zgartirdi, eski/yangi qiymat,
-    IP address va browser ma'lumotlari saqlanadi.
-
-
-================================================================
-  QISM 9 — RAQAMLAR XULOSASI
-================================================================
-
-  Funksionaliklar soni    :  11 ta
-  API endpointlar soni    :  42 ta
-  NestJS modullar soni    :  10 ta (AppModule + 9 feature)
-  DTO fayllar soni        :  17 ta
-  Database jadvallar soni :  10 ta
-  Operatsiya turlari      :   7 ta
-
-
-================================================================
-  KEYINGI QADAMLAR (tavsiya tartibi)
-================================================================
-
-  1. NestJS loyha yaratish va asosiy sozlamalar
-  2. Prisma schema yozish va migration
-  3. AuthModule — login, JWT, guard
-  4. DepartmentsModule va UsersModule
-  5. ProductsModule va InventoryModule
-  6. OperationsModule — eng muhim, transaksiyalar
-  7. HistoryModule va StatsModule
-  8. Testing va deploy
-
-================================================================
-  FAYL OXIRI
-================================================================
+* `[A]`  = faqat ADMIN
+* `[AO]` = ADMIN + OMBORCHI
+* `[K]`  = KADR (HR)
+* `[X]`  = XODIM
+* `[ALL]` = Barcha (ADMIN + OMBORCHI + KADR + XODIM)
+
+### 1. AUTH Moduli (5 ta)
+* `POST /auth/login` `[ALL]` — Tizimga kirish.
+* `POST /auth/refresh` `[ALL]` — Token yangilash.
+* `POST /auth/logout` `[ALL]` — Tizimdan chiqish (ref token o'chiriladi).
+* `GET /auth/me` `[ALL]` — Joriy foydalanuvchi profili.
+* `PUT /auth/change-password` `[ALL]` — Parolni o'zgartirish.
+
+### 2. DEPARTMENTS Moduli (6 ta)
+* `GET /departments` `[A, AO, K]` — Barcha bo'limlar ro'yxati.
+* `GET /departments/:id` `[A, AO, K]` — Bitta bo'lim tafsilotlari (shu jumladan xodimlar ro'yxati, sarflanadigan materiallar va shared jihozlar ro'yxati).
+* `GET /departments/:id/stats` `[AO]` — Bo'lim statistikasi.
+* `POST /departments` `[A]` — Yangi bo'lim qo'shish (nom takrorlanishi taqiqlanadi).
+* `PUT /departments/:id` `[A]` — Bo'limni tahrirlash.
+* `DELETE /departments/:id` `[A]` — Bo'limni o'chirish (agar unda xodim yoki jihoz bo'lmasa).
+
+### 3. USERS Moduli (9 ta)
+* `GET /users` `[A, K]` — Barcha xodimlar ro'yxati (qidiruv, bo'lim bo'yicha filtr).
+* `GET /users/:id` `[A, K]` — Bitta xodim ma'lumoti.
+* `GET /users/:id/assignments` `[A, AO, K]` — Xodimdi hozirda mavjud barcha faol jihozlari.
+* `GET /users/:id/history` `[A, AO, K]` — Xodimning amallar tarixi.
+* `POST /users` `[A]` — Yangi xodim qo'shish.
+* `PUT /users/:id` `[A]` — Xodim ma'lumotlarini tahrirlash.
+* `PATCH /users/:id/status` `[A]` — Xodimni bloklash / faollashtirish (bloklanganda uning barcha tokenlari darhol o'chadi).
+* `DELETE /users/:id` `[A]` — Xodimni tizimdan o'chirish (soft delete).
+* `POST /users/:id/bulk-return` `[A, AO]` — Xodimdan barcha jihozlarni bitta so'rovda qaytarib olish.
+* `POST /users/:id/bulk-transfer` `[A, AO]` — Xodimning barcha jihozlarini boshqa xodimga o'tkazish.
+
+### 4. PRODUCTS Moduli (7 ta)
+* `GET /products` `[ALL]` — Mahsulotlar katalogi (qidiruv, tur bo'yicha filtr).
+* `GET /products/low-stock` `[A, AO]` — Kam qolgan mahsulotlar ro'yxati.
+* `GET /products/:id` `[ALL]` — Bitta mahsulot tafsilotlari.
+* `GET /products/:id/history` `[A, AO]` — Mahsulot harakatlari tarixi.
+* `POST /products` `[A]` — Yangi mahsulot yaratish.
+* `PUT /products/:id` `[A]` — Mahsulotni tahrirlash.
+* `DELETE /products/:id` `[A]` — Mahsulotni katalogdan o'chirish (qoldiqlar bo'lsa taqiqlanadi).
+
+### 5. INVENTORY Moduli (6 ta)
+* `GET /inventory` `[A, AO, K]` — Barcha ombor qoldiqlari holati.
+* `GET /inventory/low-stock` `[A, AO]` — Minimal darajadan past qoldiqlar.
+* `GET /inventory/export` `[A, AO, K]` — Ombor joriy qoldig'i va jihozlar biriktiruvini Excel (CSV) formatida yuklab olish.
+* `GET /inventory/:productId` `[A, AO, K]` — Bitta mahsulot ombor qoldig'i.
+* `PATCH /inventory/min-level` `[A, AO]` — Minimal ogohlantirish darajasini belgilash.
+* `POST /inventory/bulk-stock-in` `[A, AO]` — Excel orqali bir vaqtda ko'p mahsulot kirim qilish.
+
+### 6. OPERATIONS Moduli (7 ta)
+* `POST /operations/stock-in` `[A, AO]` — Yakka tartibda kirim qilish (jihoz bo'lsa Asset avtomatik yaratiladi).
+  * Body: `{ name, productType, unit, quantity, unitPrice, inventoryNumbers?, serialNumbers?, minLevel?, documentNumber?, note? }`
+* `POST /operations/give-to-user` `[A, AO]` — Xodimga jihoz biriktirish.
+  * Body: `{ userId, productId, inventoryNumber, serialNumber?, documentNumber?, note? }`
+* `POST /operations/return-from-user` `[A, AO]` — Xodimdan jihozni omborga qaytarib olish.
+  * Body: `{ userId, assetId, documentNumber?, note? }`
+* `POST /operations/transfer-user` `[A, AO]` — Jihozni bir xodimdan boshqasiga o'tkazish.
+  * Body: `{ fromUserId, toUserId, assetId, documentNumber?, note? }`
+* `POST /operations/give-to-dept` `[A, AO]` — Bo'limga sarflanadigan material berish.
+  * Body: `{ departmentId, productId, quantity, documentNumber?, note? }`
+* `POST /operations/assign-to-dept` `[A, AO]` — Bo'limga umumiy foydalanish uchun jihoz biriktirish (Shared Asset).
+  * Body: `{ departmentId, productId, inventoryNumber, serialNumber?, documentNumber?, note? }`
+* `POST /operations/return-from-dept` `[A, AO]` — Bo'limdan material yoki umumiy jihozni omborga qaytarish.
+  * Body: `{ departmentId, productId, quantity?, assetId?, documentNumber?, note? }`
+* `POST /operations/write-off` `[A]` — Jihoz yoki materialni hisobdan chiqarish (spisanie).
+  * Body: `{ productId?, assetId?, quantity?, documentNumber?, note? }`
+
+### 7. HISTORY Moduli (2 ta)
+* `GET /history` `[A, AO, K]` — Filtrlar bo'yicha to'liq amallar tarixi.
+  * Query: `?operationType=...&userId=...&departmentId=...&productId=...&assetId=...&inventoryNumber=...&from=...&to=...&page=1&limit=20`
+* `GET /history/export` `[A, AO, K]` — Tarixni filtrlar bo'yicha CSV formatida eksport qilish.
+
+### 8. STATS Moduli (6 ta)
+* `GET /stats/overview` `[A, AO]` — Umumiy dashboard ko'rsatkichlari (Jami jihozlar qiymati, hisobdan o'chirish zararlari).
+* `GET /stats/by-department` `[A, AO]` — Bo'limlar kesimida jihozlar yuklamasi va umumiy qiymati (`totalAssetValue`).
+* `GET /stats/by-product` `[A, AO]` — Mahsulotlar bo'yicha jami chiqarilgan qoldiqlar statistikasi.
+* `GET /stats/low-stock` `[A, AO]` — Kam qolgan mahsulotlar ro'yxati.
+* `GET /stats/monthly` `[A, AO]` — Oylik dinamika.
+* `GET /stats/comparison` `[A, AO]` — Oyma-oy solishtirish (Bu oy vs O'tgan oy o'sish foizlarida).
+
+---
+
+## 🔒 Rol Ruxsatlari Jadvali (Rollar bo'yicha cheklovlar)
+
+| Endpoint | ADMIN | OMBORCHI | KADR | XODIM |
+| :--- | :---: | :---: | :---: | :---: |
+| `POST /auth/login` | ✅ | ✅ | ✅ | ✅ |
+| `GET /auth/me` | ✅ | ✅ | ✅ | ✅ |
+| `GET /departments` | ✅ | ✅ | ✅ | ❌ |
+| `GET /departments/:id` | ✅ | ✅ | ✅ | ❌ |
+| `POST /departments` | ✅ | ❌ | ❌ | ❌ |
+| `GET /users` | ✅ | ❌ | ✅ | ❌ |
+| `GET /users/:id/assignments` | ✅ | ✅ | ✅ | ❌ |
+| `PATCH /users/:id/status` | ✅ | ❌ | ❌ | ❌ |
+| `GET /products` | ✅ | ✅ | ✅ | ✅ |
+| `POST /products` | ✅ | ❌ | ❌ | ❌ |
+| `GET /inventory` | ✅ | ✅ | ✅ | ❌ |
+| `GET /inventory/export` | ✅ | ✅ | ✅ | ❌ |
+| `POST /inventory/bulk-stock-in` | ✅ | ✅ | ❌ | ❌ |
+| `POST /operations/*` | ✅ | ✅ | ❌ | ❌ |
+| `POST /operations/write-off` | ✅ | ❌ | ❌ | ❌ |
+| `GET /history` | ✅ | ✅ | ✅ | ❌ |
+| `GET /history/export` | ✅ | ✅ | ✅ | ❌ |
+| `GET /stats/*` | ✅ | ✅ | ❌ | ❌ |
+
+---
+
+## ⚙️ Loyihani Ishga Tushirish
+
+1. **Atrof-muhit o'zgaruvchilarini sozlang (`.env`):**
+   Root papkada `.env` faylini quyidagicha to'ldiring:
+   ```env
+   APP_PORT=4000
+   DATABASE_URL="postgresql://postgres:user@localhost:5432/skladcontrol?schema=public"
+   JWT_SECRET="strong-secret-key"
+   JWT_REFRESH_SECRET="strong-refresh-secret-key"
+   MAIL_USER="your-email@gmail.com"
+   MAIL_PASSWORD="gmail-app-password"
+   ```
+
+2. **Zarur paketlarni o'rnating:**
+   ```bash
+   npm install
+   ```
+
+3. **Prisma orqali bazani sinxronlang va migratsiyalarni ishga tushiring:**
+   ```bash
+   npx prisma migrate dev
+   ```
+
+4. **Loyihani ishga tushiring:**
+   ```bash
+   npm run start:dev
+   ```
+   Loyiha ishga tushganda bazada avtomatik tarzda `admin/admin123` (`ADMIN`), `omborchi/omborchi123` (`OMBORCHI`) va `kadr/kadr123` (`KADR`) foydalanuvchilari avtomatik tarzda yaratiladi (seeding).
+
+5. **Swagger hujjatlarini ko'rish:**
+   Brauzer orqali `http://localhost:4000/docs` manziliga kiring.

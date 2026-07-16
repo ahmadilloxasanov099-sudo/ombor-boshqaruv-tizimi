@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class AssignToDeptDto {
   @ApiProperty({ example: 'uuid', description: 'Bo\'lim ID si' })
@@ -10,10 +10,14 @@ export class AssignToDeptDto {
   @IsUUID()
   productId: string;
 
-  @ApiProperty({ example: 2, description: 'Miqdor' })
-  @IsInt()
-  @Min(1)
-  quantity: number;
+  @ApiProperty({ example: 'INV-2024-001', description: 'Inventar raqami' })
+  @IsString()
+  inventoryNumber: string;
+
+  @ApiPropertyOptional({ example: 'PF2X0001', description: 'Seriya raqami (ixtiyoriy)' })
+  @IsOptional()
+  @IsString()
+  serialNumber?: string;
 
   @ApiPropertyOptional({ example: 'AKT-2024-005', description: 'Hujjat raqami' })
   @IsOptional()

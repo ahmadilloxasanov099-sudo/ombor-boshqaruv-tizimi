@@ -48,6 +48,13 @@ export class StatsController {
     return this.statsService.getMonthly();
   }
 
+  @ApiOperation({ summary: "Oylik solishtirish (Bu oy vs O'tgan oy)" })
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Get('comparison')
+  getComparison() {
+    return this.statsService.getComparison();
+  }
+
   @ApiOperation({ summary: "Xodim bo'yicha jihoz yuklamasi" })
   @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
   @Get('by-user')

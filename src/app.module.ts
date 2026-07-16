@@ -10,6 +10,7 @@ import { HistoryModule } from './modules/history/history.module';
 import { InventoryModule } from './modules/inventory';
 import { OperationsModule } from './modules/operations';
 import { StatsModule } from './modules/stats/stats.module';
+import { MailModule } from './modules/nodemailer/mail.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { StatsModule } from './modules/stats/stats.module';
     InventoryModule,
     OperationsModule,
     StatsModule,
+    MailModule,
   ],
 })
 export class AppModule {}

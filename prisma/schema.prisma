@@ -42,6 +42,7 @@ enum OperationType {
   RETURN_FROM_USER
   TRANSFER_USER
   WRITE_OFF
+  ASSIGN_TO_DEPT
 }
 
 enum AuditAction {
@@ -60,6 +61,7 @@ model Department {
   users            User[]
   departmentAssets DepartmentAsset[]
   operations       Operation[]
+  assignments      Assignment[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -182,18 +184,22 @@ model Asset {
 model Assignment {
   id String @id @default(uuid())
 
-  userId  String
-  assetId String
+  userId       String?
+  departmentId String?
+  assetId      String
 
   assignedAt DateTime  @default(now())
   returnedAt DateTime?
 
-  user  User  @relation(fields: [userId], references: [id])
-  asset Asset @relation(fields: [assetId], references: [id])
+  user       User?       @relation(fields: [userId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  asset      Asset       @relation(fields: [assetId], references: [id])
 
   @@index([userId])
+  @@index([departmentId])
   @@index([assetId])
   @@index([userId, returnedAt])
+  @@index([departmentId, returnedAt])
   @@index([assetId, returnedAt])
 }
 

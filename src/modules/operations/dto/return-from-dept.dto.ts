@@ -10,10 +10,16 @@ export class ReturnFromDeptDto {
   @IsUUID()
   productId: string;
 
-  @ApiProperty({ example: 1, description: 'Miqdor' })
+  @ApiPropertyOptional({ example: 1, description: 'Miqdor (Faqat SARFLANADIGAN uchun)' })
+  @IsOptional()
   @IsInt()
   @Min(1)
-  quantity: number;
+  quantity?: number;
+
+  @ApiPropertyOptional({ example: 'uuid', description: 'Jihoz ID si (Faqat BERILADIGAN uchun)' })
+  @IsOptional()
+  @IsUUID()
+  assetId?: string;
 
   @ApiPropertyOptional({ example: 'AKT-2024-006', description: 'Hujjat raqami' })
   @IsOptional()

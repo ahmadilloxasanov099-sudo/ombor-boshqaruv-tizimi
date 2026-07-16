@@ -96,33 +96,60 @@ export class ProductsService {
   }
 
   async remove(id: string, deletedBy: string) {
-    const product = await this.findOne(id);
+    const product = await this.prisma.product.findFirst({
+      where: { id, deletedAt: null },
+      include: { inventory: true },
+    });
+    if (!product) {
+      throw new NotFoundException('Mahsulot topilmadi');
+    }
 
+    // 1. Ombordagi qoldiqni tekshirish
+    if (product.inventory && product.inventory.quantity > 0) {
+      throw new BadRequestException(
+        "Mahsulot omborda mavjud, o'chirib bo'lmaydi",
+      );
+    }
+
+    // 2. Jihozlar borligini tekshirish (Faqat BERILADIGAN uchun)
     const activeAssets = await this.prisma.asset.count({
       where: { productId: id, deletedAt: null },
     });
-
     if (activeAssets > 0) {
-      // FIX: was `throw new Error(...)` which bypassed HttpExceptionFilter and returned 500
       throw new BadRequestException(
         "Mahsulotda aktiv jihozlar bor, o'chirib bo'lmaydi",
       );
     }
 
-    await this.prisma.product.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    // 3. Bo'limlardagi qoldiqlarni tekshirish (DepartmentAsset quantity > 0)
+    const activeDeptAssets = await this.prisma.departmentAsset.aggregate({
+      where: { productId: id },
+      _sum: { quantity: true },
     });
+    if (activeDeptAssets._sum.quantity && activeDeptAssets._sum.quantity > 0) {
+      throw new BadRequestException(
+        "Ushbu mahsulot bo'limlarda mavjud, o'chirib bo'lmaydi",
+      );
+    }
 
-    await this.auditService.log({
-      userId: deletedBy,
-      action: AuditAction.DELETE,
-      tableName: 'Product',
-      recordId: id,
-      oldData: product,
+    return this.prisma.$transaction(async (tx) => {
+      await tx.product.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: deletedBy,
+          action: AuditAction.DELETE,
+          tableName: 'Product',
+          recordId: id,
+          oldData: product as any,
+        },
+      });
+
+      return { message: "Mahsulot muvaffaqiyatli o'chirildi" };
     });
-
-    return { message: "Mahsulot muvaffaqiyatli o'chirildi" };
   }
 
   /**

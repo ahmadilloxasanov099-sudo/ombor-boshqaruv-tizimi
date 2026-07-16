@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OperationType } from '@prisma/client';
-import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
 
 export class HistoryQueryDto extends PaginationDto {
@@ -23,6 +23,16 @@ export class HistoryQueryDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   productId?: string;
+
+  @ApiPropertyOptional({ example: 'uuid', description: 'Jihoz (Asset) ID si' })
+  @IsOptional()
+  @IsUUID()
+  assetId?: string;
+
+  @ApiPropertyOptional({ example: 'INV-1001', description: 'Inventar raqami' })
+  @IsOptional()
+  @IsString()
+  inventoryNumber?: string;
 
   @ApiPropertyOptional({ example: '2024-01-01', description: 'Boshlanish sanasi' })
   @IsOptional()

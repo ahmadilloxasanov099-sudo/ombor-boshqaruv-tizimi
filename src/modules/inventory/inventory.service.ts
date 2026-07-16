@@ -225,4 +225,143 @@ export class InventoryService {
       results,
     };
   }
+
+  async exportCsv(): Promise<string> {
+    const products = await this.prisma.product.findMany({
+      where: { deletedAt: null },
+      include: {
+        inventory: true,
+        assets: {
+          where: { deletedAt: null },
+          include: {
+            assignments: {
+              where: { returnedAt: null },
+              include: {
+                user: { select: { fullName: true, username: true } },
+                department: { select: { name: true } },
+              },
+            },
+          },
+        },
+        departmentAssets: {
+          include: { department: true },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const headers = [
+      'Mahsulot nomi',
+      'Turi',
+      'O‘lchov birligi',
+      'Inventar raqami',
+      'Seriya raqami',
+      'Holati',
+      'Joylashuvi (Xodim/Bo‘lim)',
+      'Biriktirilgan sana',
+      'Ombordagi qoldiq (Sarflanadigan)',
+      'Bo‘limlardagi qoldiq (Sarflanadigan)',
+      'Birlik narxi (Sotib olingan narxi)',
+      'Minimal chegara',
+      'Tavsif',
+    ];
+
+    const csvRows = [headers.join(',')];
+
+    for (const product of products) {
+      const typeText = product.productType === ProductType.BERILADIGAN ? 'Jihoz (Asset)' : 'Sarflanadigan';
+      const unitText = product.unit;
+      const minLevelText = product.inventory?.minLevel ?? 0;
+      const descText = product.description ? `"${product.description.replace(/"/g, '""')}"` : '';
+
+      // 1. Agar SARFLANADIGAN bo'lsa
+      if (product.productType === ProductType.SARFLANADIGAN) {
+        const warehouseQty = product.inventory?.quantity ?? 0;
+        const deptsQty = product.departmentAssets.reduce((sum, da) => sum + da.quantity, 0);
+        const unitPrice = product.inventory?.unitPrice ? product.inventory.unitPrice.toString() : '';
+
+        const row = [
+          `"${product.name.replace(/"/g, '""')}"`,
+          typeText,
+          unitText,
+          '', // Inventar raqami yo'q
+          '', // Seriya raqami yo'q
+          warehouseQty > 0 ? 'Omborda mavjud' : 'Tugagan',
+          '', // Joylashuv yo'q
+          '', // Sana yo'q
+          warehouseQty,
+          deptsQty,
+          unitPrice,
+          minLevelText,
+          descText,
+        ];
+        csvRows.push(row.join(','));
+      }
+
+      // 2. Agar BERILADIGAN jihoz bo'lsa
+      if (product.productType === ProductType.BERILADIGAN) {
+        if (product.assets.length > 0) {
+          for (const asset of product.assets) {
+            const activeAssignment = asset.assignments[0];
+            let statusText = 'Omborda';
+            let locationText = '';
+            let assignedDateText = '';
+
+            if (asset.status === 'WRITTEN_OFF') {
+              statusText = 'Hisobdan chiqarilgan';
+            } else if (activeAssignment) {
+              if (activeAssignment.user) {
+                statusText = 'Xodimga biriktirilgan';
+                locationText = `"${activeAssignment.user.fullName} (${activeAssignment.user.username})"`;
+              } else if (activeAssignment.department) {
+                statusText = 'Bo‘limga biriktirilgan';
+                locationText = `"${activeAssignment.department.name}"`;
+              }
+              assignedDateText = activeAssignment.assignedAt.toISOString();
+            }
+
+            const priceText = asset.purchasePrice ? asset.purchasePrice.toString() : (product.inventory?.unitPrice ? product.inventory.unitPrice.toString() : '');
+
+            const row = [
+              `"${product.name.replace(/"/g, '""')}"`,
+              typeText,
+              unitText,
+              `"${asset.inventoryNumber.replace(/"/g, '""')}"`,
+              asset.serialNumber ? `"${asset.serialNumber.replace(/"/g, '""')}"` : '',
+              statusText,
+              locationText,
+              assignedDateText,
+              '', // Ombordagi qoldiq
+              '', // Bo'limlardagi qoldiq
+              priceText,
+              minLevelText,
+              descText,
+            ];
+            csvRows.push(row.join(','));
+          }
+        } else {
+          const qty = product.inventory?.quantity ?? 0;
+          const unitPrice = product.inventory?.unitPrice ? product.inventory.unitPrice.toString() : '';
+          const row = [
+            `"${product.name.replace(/"/g, '""')}"`,
+            typeText,
+            unitText,
+            '',
+            '',
+            'Omborda (Jihozlar ro‘yxatga olinmagan)',
+            '',
+            '',
+            qty,
+            '',
+            unitPrice,
+            minLevelText,
+            descText,
+          ];
+          csvRows.push(row.join(','));
+        }
+      }
+    }
+
+    return '\ufeff' + csvRows.join('\n');
+  }
 }

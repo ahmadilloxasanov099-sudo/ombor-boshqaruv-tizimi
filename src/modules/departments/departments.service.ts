@@ -32,8 +32,29 @@ export class DepartmentsService {
     const department = await this.prisma.department.findFirst({
       where: { id, deletedAt: null },
       include: {
-        _count: {
-          select: { users: true, departmentAssets: true },
+        users: {
+          where: { deletedAt: null, isActive: true },
+          select: {
+            id: true,
+            fullName: true,
+            username: true,
+            position: true,
+          },
+        },
+        departmentAssets: {
+          include: {
+            product: { select: { id: true, name: true, productType: true, unit: true } },
+          },
+        },
+        assignments: {
+          where: { returnedAt: null },
+          include: {
+            asset: {
+              include: {
+                product: { select: { id: true, name: true, productType: true } },
+              },
+            },
+          },
         },
       },
     });

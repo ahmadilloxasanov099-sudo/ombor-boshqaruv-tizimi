@@ -11,8 +11,9 @@ export class StatsService {
       totalUsers,
       totalDepartments,
       totalOperations,
-      activeAssets,
+      activeAssignments,
       inventories,
+      writeOffs,
     ] = await Promise.all([
       this.prisma.product.count({ where: { deletedAt: null } }),
       this.prisma.user.count({ where: { deletedAt: null, isActive: true } }),
@@ -22,14 +23,22 @@ export class StatsService {
       this.prisma.inventory.findMany({
         where: { product: { deletedAt: null } },
       }),
+      this.prisma.operation.findMany({
+        where: { type: 'WRITE_OFF' },
+        include: {
+          product: { include: { inventory: true } },
+          asset: true,
+        },
+      }),
     ]);
 
     const lowStockCount = inventories.filter(
       (i) => i.quantity < i.minLevel,
     ).length;
 
+    // Real-time calculation from actual quantity and unitPrice
     const totalInventoryValue = inventories.reduce(
-      (sum, i) => sum + Number(i.totalValue ?? 0),
+      (sum, i) => sum + (Number(i.quantity) * Number(i.unitPrice ?? 0)),
       0,
     );
 
@@ -43,15 +52,25 @@ export class StatsService {
       0,
     );
 
+    const totalWriteOffCount = writeOffs.length;
+    const totalWriteOffLoss = writeOffs.reduce((sum, op) => {
+      const price = op.asset?.purchasePrice 
+        ? Number(op.asset.purchasePrice) 
+        : (op.product?.inventory?.unitPrice ? Number(op.product.inventory.unitPrice) : 0);
+      return sum + (Number(op.quantity) * price);
+    }, 0);
+
     return {
       totalProducts,
       totalUsers,
       totalDepartments,
       totalOperations,
       lowStockCount,
-      activeAssets,
+      activeAssignments,
       totalInventoryValue,
       totalAssignedValue,
+      totalWriteOffCount,
+      totalWriteOffLoss,
     };
   }
 
@@ -65,19 +84,50 @@ export class StatsService {
             product: { select: { name: true, productType: true } },
           },
         },
+        assignments: {
+          where: { returnedAt: null },
+          include: { asset: true },
+        },
+        users: {
+          where: { deletedAt: null, isActive: true },
+          include: {
+            assignments: {
+              where: { returnedAt: null },
+              include: { asset: true },
+            },
+          },
+        },
       },
     });
 
-    return departments.map((dept) => ({
-      id: dept.id,
-      name: dept.name,
-      userCount: dept._count.users,
-      assets: dept.departmentAssets.map((da) => ({
-        productName: da.product.name,
-        productType: da.product.productType,
-        quantity: da.quantity,
-      })),
-    }));
+    return departments.map((dept) => {
+      const directValue = dept.assignments.reduce(
+        (sum, a) => sum + Number(a.asset.purchasePrice ?? 0),
+        0,
+      );
+
+      const userAssetsValue = dept.users.reduce((userSum, user) => {
+        const userValue = user.assignments.reduce(
+          (sum, a) => sum + Number(a.asset.purchasePrice ?? 0),
+          0,
+        );
+        return userSum + userValue;
+      }, 0);
+
+      const totalValue = directValue + userAssetsValue;
+
+      return {
+        id: dept.id,
+        name: dept.name,
+        userCount: dept._count.users,
+        totalAssetValue: totalValue,
+        assets: dept.departmentAssets.map((da) => ({
+          productName: da.product.name,
+          productType: da.product.productType,
+          quantity: da.quantity,
+        })),
+      };
+    });
   }
 
   async getByProduct() {
@@ -96,7 +146,7 @@ export class StatsService {
       const productOps = operations.filter((op) => op.productId === product.id);
       const totalOut = productOps
         .filter((op) =>
-          ['GIVE_TO_USER', 'GIVE_TO_DEPT'].includes(op.type),
+          ['GIVE_TO_USER', 'GIVE_TO_DEPT', 'ASSIGN_TO_DEPT'].includes(op.type),
         )
         .reduce((sum, op) => sum + (op._sum.quantity ?? 0), 0);
 
@@ -166,6 +216,110 @@ export class StatsService {
     });
 
     return Object.values(monthly);
+  }
+
+  async getComparison() {
+    const now = new Date();
+    
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    const [thisMonthOps, lastMonthOps] = await Promise.all([
+      this.prisma.operation.findMany({
+        where: {
+          createdAt: { gte: thisMonthStart, lte: thisMonthEnd },
+        },
+        include: {
+          product: { include: { inventory: true } },
+          asset: true,
+        },
+      }),
+      this.prisma.operation.findMany({
+        where: {
+          createdAt: { gte: lastMonthStart, lte: lastMonthEnd },
+        },
+        include: {
+          product: { include: { inventory: true } },
+          asset: true,
+        },
+      }),
+    ]);
+
+    const calculateMetrics = (ops: any[]) => {
+      let stockInQty = 0;
+      let stockInValue = 0;
+      let stockOutQty = 0;
+      let stockOutValue = 0;
+      let writeOffQty = 0;
+      let writeOffValue = 0;
+
+      ops.forEach((op) => {
+        const unitPrice = op.asset?.purchasePrice 
+          ? Number(op.asset.purchasePrice) 
+          : (op.product?.inventory?.unitPrice ? Number(op.product.inventory.unitPrice) : 0);
+
+        const opValue = Number(op.quantity) * unitPrice;
+
+        if (op.type === 'STOCK_IN') {
+          stockInQty += op.quantity;
+          stockInValue += opValue;
+        } else if (['GIVE_TO_USER', 'GIVE_TO_DEPT', 'ASSIGN_TO_DEPT'].includes(op.type)) {
+          stockOutQty += op.quantity;
+          stockOutValue += opValue;
+        } else if (op.type === 'WRITE_OFF') {
+          writeOffQty += op.quantity;
+          writeOffValue += opValue;
+        }
+      });
+
+      return {
+        totalOperations: ops.length,
+        stockInQty,
+        stockInValue,
+        stockOutQty,
+        stockOutValue,
+        writeOffQty,
+        writeOffValue,
+      };
+    };
+
+    const thisMonth = calculateMetrics(thisMonthOps);
+    const lastMonth = calculateMetrics(lastMonthOps);
+
+    const getPercentageChange = (current: number, previous: number) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return Number((((current - previous) / previous) * 100).toFixed(2));
+    };
+
+    return {
+      thisMonthName: thisMonthStart.toLocaleString('uz-UZ', { month: 'long' }),
+      lastMonthName: lastMonthStart.toLocaleString('uz-UZ', { month: 'long' }),
+      comparison: {
+        totalOperations: {
+          thisMonth: thisMonth.totalOperations,
+          lastMonth: lastMonth.totalOperations,
+          changePercent: getPercentageChange(thisMonth.totalOperations, lastMonth.totalOperations),
+        },
+        stockInValue: {
+          thisMonth: thisMonth.stockInValue,
+          lastMonth: lastMonth.stockInValue,
+          changePercent: getPercentageChange(thisMonth.stockInValue, lastMonth.stockInValue),
+        },
+        stockOutValue: {
+          thisMonth: thisMonth.stockOutValue,
+          lastMonth: lastMonth.stockOutValue,
+          changePercent: getPercentageChange(thisMonth.stockOutValue, lastMonth.stockOutValue),
+        },
+        writeOffValue: {
+          thisMonth: thisMonth.writeOffValue,
+          lastMonth: lastMonth.writeOffValue,
+          changePercent: getPercentageChange(thisMonth.writeOffValue, lastMonth.writeOffValue),
+        },
+      },
+    };
   }
 
   async getByUser() {

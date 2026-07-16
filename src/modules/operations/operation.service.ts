@@ -1,3 +1,4 @@
+
 import {
   BadRequestException,
   Injectable,
@@ -12,10 +13,39 @@ import { TransferUserDto } from './dto/transfer-user.dto';
 import { GiveToDeptDto } from './dto/give-to-dept.dto';
 import { ReturnFromDeptDto } from './dto/return-from-dept.dto';
 import { WriteOffDto } from './dto/writeoff.dto';
+import { AssignToDeptDto } from './dto/assign-to-dept.dto';
+import { MailService } from '../nodemailer/mail.service';
 
 @Injectable()
 export class OperationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mailService: MailService,
+  ) {}
+
+  private async checkStockAndAlert(productId: string) {
+    try {
+      const inventory = await this.prisma.inventory.findUnique({
+        where: { productId },
+        include: { product: true },
+      });
+
+      if (inventory && inventory.product && inventory.quantity < inventory.minLevel) {
+        // Fire and forget: send email asynchronously in background
+        this.mailService
+          .sendLowStockAlert(
+            inventory.product.name,
+            inventory.quantity,
+            inventory.minLevel,
+          )
+          .catch((err) =>
+            console.error('Failed to send stock alert email:', err),
+          );
+      }
+    } catch (error) {
+      console.error('Error checking stock level for email alert:', error);
+    }
+  }
 
   // STOCK_IN — omborga kirim (Product va Assetlar avtomatik yaratiladi)
   async stockIn(dto: StockInDto, performedById: string) {
@@ -165,7 +195,7 @@ export class OperationsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let assetId: string;
 
       if (!existingAsset) {
@@ -225,6 +255,131 @@ export class OperationsService {
         },
       });
     });
+
+    this.checkStockAndAlert(dto.productId);
+    return result;
+  }
+
+  // ASSIGN_TO_DEPT — bo'limga BERILADIGAN (shared) jihoz biriktirish
+  async assignToDept(dto: AssignToDeptDto, performedById: string) {
+    const product = await this.prisma.product.findFirst({
+      where: { id: dto.productId, deletedAt: null },
+      include: { inventory: true },
+    });
+    if (!product) throw new NotFoundException('Mahsulot topilmadi');
+    if (product.productType !== ProductType.BERILADIGAN) {
+      throw new BadRequestException(
+        "Faqat BERILADIGAN mahsulot bo'limga jihoz sifatida biriktiriladi",
+      );
+    }
+
+    const department = await this.prisma.department.findFirst({
+      where: { id: dto.departmentId, deletedAt: null },
+    });
+    if (!department) throw new NotFoundException("Bo'lim topilmadi");
+
+    const existingAsset = await this.prisma.asset.findUnique({
+      where: { inventoryNumber: dto.inventoryNumber },
+      include: { assignments: { where: { returnedAt: null } } },
+    });
+
+    if (existingAsset) {
+      if (existingAsset.productId !== dto.productId) {
+        throw new BadRequestException(
+          'Bu inventar raqami boshqa mahsulotga tegishli',
+        );
+      }
+      if (existingAsset.status !== 'ACTIVE') {
+        throw new BadRequestException('Bu jihoz faol holatda emas');
+      }
+      if (existingAsset.assignments.length > 0) {
+        throw new BadRequestException(
+          'Bu jihoz hozirda kimga yoki qaysi bo‘limga biriktirilgan',
+        );
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      let assetId: string;
+
+      if (!existingAsset) {
+        const newAsset = await tx.asset.create({
+          data: {
+            productId: dto.productId,
+            inventoryNumber: dto.inventoryNumber,
+            serialNumber: dto.serialNumber,
+            status: 'ACTIVE',
+            purchasePrice: product.inventory?.unitPrice ?? null,
+          },
+        });
+        assetId = newAsset.id;
+      } else {
+        assetId = existingAsset.id;
+        if (dto.serialNumber && existingAsset.serialNumber !== dto.serialNumber) {
+          await tx.asset.update({
+            where: { id: existingAsset.id },
+            data: { serialNumber: dto.serialNumber },
+          });
+        }
+      }
+
+      // Create assignment to the department
+      await tx.assignment.create({
+        data: { departmentId: dto.departmentId, assetId },
+      });
+
+      // Update aggregate count in DepartmentAsset
+      await tx.departmentAsset.upsert({
+        where: {
+          departmentId_productId: {
+            departmentId: dto.departmentId,
+            productId: dto.productId,
+          },
+        },
+        update: { quantity: { increment: 1 } },
+        create: {
+          departmentId: dto.departmentId,
+          productId: dto.productId,
+          quantity: 1,
+        },
+      });
+
+      // Decrement warehouse stock
+      const invUpdate = await tx.inventory.updateMany({
+        where: { productId: dto.productId, quantity: { gte: 1 } },
+        data: { quantity: { decrement: 1 } },
+      });
+      if (invUpdate.count === 0) {
+        throw new BadRequestException("Omborda yetarli miqdor yo'q");
+      }
+
+      await tx.operation.create({
+        data: {
+          type: 'ASSIGN_TO_DEPT',
+          quantity: 1,
+          departmentId: dto.departmentId,
+          assetId,
+          productId: dto.productId,
+          performedById,
+          documentNumber: dto.documentNumber,
+          note: dto.note,
+        },
+      });
+
+      return tx.asset.findUnique({
+        where: { id: assetId },
+        include: {
+          product: { select: { id: true, name: true } },
+          assignments: {
+            where: { returnedAt: null },
+            include: { department: { select: { id: true, name: true } } },
+          },
+        },
+      });
+    });
+
+    this.checkStockAndAlert(dto.productId);
+    return result;
   }
 
   // RETURN_FROM_USER — xodimdan jihoz qaytarish
@@ -342,7 +497,7 @@ export class OperationsService {
     });
     if (!department) throw new NotFoundException("Bo'lim topilmadi");
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const invUpdate = await tx.inventory.updateMany({
         where: { productId: dto.productId, quantity: { gte: dto.quantity } },
         data: { quantity: { decrement: dto.quantity } },
@@ -380,39 +535,95 @@ export class OperationsService {
 
       return { message: "Material bo'limga muvaffaqiyatli berildi" };
     });
+
+    this.checkStockAndAlert(dto.productId);
+    return result;
   }
 
-  // RETURN_FROM_DEPT — bo'limdan qaytarish
+  // RETURN_FROM_DEPT — bo'limdan qaytarish (Sarflanadigan va Beriladigan shared jihozlar)
   async returnFromDept(dto: ReturnFromDeptDto, performedById: string) {
     const product = await this.prisma.product.findFirst({
       where: { id: dto.productId, deletedAt: null },
     });
     if (!product) throw new NotFoundException('Mahsulot topilmadi');
-    if (product.productType !== ProductType.SARFLANADIGAN) {
-      throw new BadRequestException(
-        "Faqat SARFLANADIGAN mahsulotni bo'limdan qaytarish mumkin",
-      );
+
+    // 1. Agar BERILADIGAN jihoz bo'lsa
+    if (product.productType === ProductType.BERILADIGAN) {
+      if (!dto.assetId) {
+        throw new BadRequestException(
+          'Jihozni qaytarish uchun assetId ko‘rsatilishi shart!',
+        );
+      }
+
+      const asset = await this.prisma.asset.findFirst({
+        where: { id: dto.assetId, deletedAt: null },
+      });
+      if (!asset) throw new NotFoundException('Jihoz topilmadi');
+
+      const assignment = await this.prisma.assignment.findFirst({
+        where: { departmentId: dto.departmentId, assetId: dto.assetId, returnedAt: null },
+      });
+      if (!assignment) {
+        throw new BadRequestException('Bu jihoz ushbu bo‘limga biriktirilmagan');
+      }
+
+      return this.prisma.$transaction(async (tx) => {
+        // Mark assignment as returned
+        await tx.assignment.update({
+          where: { id: assignment.id },
+          data: { returnedAt: new Date() },
+        });
+
+        // Decrement quantity in DepartmentAsset
+        await tx.departmentAsset.update({
+          where: {
+            departmentId_productId: {
+              departmentId: dto.departmentId,
+              productId: dto.productId,
+            },
+          },
+          data: { quantity: { decrement: 1 } },
+        });
+
+        // Increment quantity in Inventory
+        await tx.inventory.update({
+          where: { productId: dto.productId },
+          data: { quantity: { increment: 1 } },
+        });
+
+        // Log operation
+        await tx.operation.create({
+          data: {
+            type: 'RETURN_FROM_DEPT',
+            quantity: 1,
+            departmentId: dto.departmentId,
+            assetId: dto.assetId,
+            productId: dto.productId,
+            performedById,
+            documentNumber: dto.documentNumber,
+            note: dto.note,
+          },
+        });
+
+        return { message: "Jihoz bo'limdan muvaffaqiyatli qaytarildi" };
+      });
     }
 
-    const departmentAsset = await this.prisma.departmentAsset.findUnique({
-      where: {
-        departmentId_productId: {
-          departmentId: dto.departmentId,
-          productId: dto.productId,
-        },
-      },
-    });
-
-    // Removed check here to prevent TOCTOU race condition
+    // 2. Agar SARFLANADIGAN material bo'lsa
+    if (!dto.quantity || dto.quantity <= 0) {
+      throw new BadRequestException(
+        'Sarflanadigan materialni qaytarish uchun quantity 0 dan katta bo‘lishi shart!',
+      );
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const deptUpdate = await tx.departmentAsset.updateMany({
         where: {
           departmentId: dto.departmentId,
           productId: dto.productId,
-          quantity: { gte: dto.quantity },
+          quantity: { gte: dto.quantity! },
         },
-        data: { quantity: { decrement: dto.quantity } },
+        data: { quantity: { decrement: dto.quantity! } },
       });
       if (deptUpdate.count === 0) {
         throw new BadRequestException("Bo'limda yetarli miqdor yo'q");
@@ -420,13 +631,13 @@ export class OperationsService {
 
       await tx.inventory.update({
         where: { productId: dto.productId },
-        data: { quantity: { increment: dto.quantity } },
+        data: { quantity: { increment: dto.quantity! } },
       });
 
       await tx.operation.create({
         data: {
           type: 'RETURN_FROM_DEPT',
-          quantity: dto.quantity,
+          quantity: dto.quantity!,
           departmentId: dto.departmentId,
           productId: dto.productId,
           performedById,
@@ -435,7 +646,7 @@ export class OperationsService {
         },
       });
 
-      return { message: "Jihoz bo'limdan muvaffaqiyatli qaytarildi" };
+      return { message: "Material bo'limdan muvaffaqiyatli qaytarildi" };
     });
   }
 
@@ -457,7 +668,7 @@ export class OperationsService {
         );
       }
 
-      return this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         await tx.asset.update({
           where: { id: dto.assetId },
           data: { status: 'WRITTEN_OFF', deletedAt: new Date() },
@@ -477,6 +688,9 @@ export class OperationsService {
 
         return { message: 'Jihoz hisobdan chiqarildi' };
       });
+
+      this.checkStockAndAlert(asset.productId);
+      return result;
     }
 
     // SARFLANADIGAN hisobdan chiqarish
@@ -488,7 +702,7 @@ export class OperationsService {
 
     // Removed check here to prevent TOCTOU race condition
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const invUpdate = await tx.inventory.updateMany({
         where: { productId: dto.productId, quantity: { gte: dto.quantity! } },
         data: { quantity: { decrement: dto.quantity! } },
@@ -510,5 +724,8 @@ export class OperationsService {
 
       return { message: 'Mahsulot hisobdan chiqarildi' };
     });
+
+    this.checkStockAndAlert(dto.productId!);
+    return result;
   }
 }

@@ -12,6 +12,7 @@ import { GiveToDeptDto } from './dto/give-to-dept.dto';
 import { ReturnFromDeptDto } from './dto/return-from-dept.dto';
 import { WriteOffDto } from './dto/writeoff.dto';
 import { StockInDto } from './dto/stock-in.dto';
+import { AssignToDeptDto } from './dto/assign-to-dept.dto';
 
 @ApiTags('Operations')
 @ApiBearerAuth()
@@ -53,6 +54,13 @@ export class OperationsController {
   @Post('give-to-dept')
   giveToDept(@Body() dto: GiveToDeptDto, @CurrentUser() user: any) {
     return this.operationsService.giveToDept(dto, user.id);
+  }
+
+  @ApiOperation({ summary: "Bo'limga umumiy jihoz biriktirish (BERILADIGAN)" })
+  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Post('assign-to-dept')
+  assignToDept(@Body() dto: AssignToDeptDto, @CurrentUser() user: any) {
+    return this.operationsService.assignToDept(dto, user.id);
   }
 
   @ApiOperation({ summary: "Bo'limdan qaytarish" })
