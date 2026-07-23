@@ -1,4 +1,4 @@
+export * from './users.service';
+export * from './users.controller';
+export * from './users.module';
 export * from './dto';
-export * from './user.controller';
-export * from './user.module';
-export * from './user.service';

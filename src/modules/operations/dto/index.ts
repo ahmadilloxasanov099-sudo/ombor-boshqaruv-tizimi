@@ -4,3 +4,6 @@ export * from './give-to-user.dto';
 export * from './return-from-dept.dto';
 export * from './return-from-user.dto';
 export * from './transfer-user.dto';
+export * from './bulk-write-off.dto';
+export * from './writeoff.dto';
+export * from './stock-in.dto';

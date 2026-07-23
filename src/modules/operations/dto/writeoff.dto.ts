@@ -68,6 +68,14 @@ export class WriteOffDto {
   @ValidateIf((o: WriteOffDto) => !o.assetId)
   quantity?: number;
 
+  @ApiPropertyOptional({
+    example: 'uuid',
+    description: "Bo'limdan hisobdan chiqarish uchun bo'lim ID",
+  })
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
   @ApiPropertyOptional({ example: 'AKT-2024-010' })
   @IsOptional()
   @IsString()

@@ -5,9 +5,13 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Res,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import * as express from 'express';
@@ -18,6 +22,16 @@ import { SetMinLevelDto } from './dto/set-min-level.dto';
 import { CurrentUser, Roles } from '../auth';
 import { BulkStockInDto } from './dto';
 
+const MANAGERS = [
+  UserRole.SUPER_ADMIN,
+  UserRole.VAZIRLIK_OMBORCHI,
+  UserRole.ORG_ADMIN,
+  UserRole.ORG_OMBORCHI,
+  UserRole.ADMIN,
+  UserRole.OMBORCHI,
+  UserRole.KADR,
+];
+
 @ApiTags('Inventory')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -26,14 +40,15 @@ export class InventoryController {
   constructor(private inventoryService: InventoryService) {}
 
   @ApiOperation({ summary: 'Barcha ombor holati' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
+  @Roles(...MANAGERS)
   @Get()
-  findAll() {
-    return this.inventoryService.findAll();
+  findAll(@Query('organizationId') organizationId: string, @CurrentUser() user: any) {
+    const targetOrgId = organizationId ? organizationId : user?.organizationId;
+    return this.inventoryService.findAll(targetOrgId, user);
   }
 
   @ApiOperation({ summary: 'Ombor hisobotini CSV formatda eksport qilish' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
+  @Roles(...MANAGERS)
   @Get('export')
   async exportCsv(@Res() res: express.Response) {
     const csvContent = await this.inventoryService.exportCsv();
@@ -46,30 +61,41 @@ export class InventoryController {
   }
 
   @ApiOperation({ summary: 'Kam qolgan mahsulotlar' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Roles(...MANAGERS)
   @Get('low-stock')
   getLowStock() {
     return this.inventoryService.getLowStock();
   }
 
   @ApiOperation({ summary: 'Bitta mahsulot miqdori' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
+  @Roles(...MANAGERS)
   @Get(':productId')
   findOne(@Param('productId') productId: string) {
     return this.inventoryService.findOne(productId);
   }
 
   @ApiOperation({ summary: 'Minimal daraja belgilash' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Roles(...MANAGERS)
   @Patch('min-level')
   setMinLevel(@Body() dto: SetMinLevelDto) {
     return this.inventoryService.setMinLevel(dto);
   }
 
   @ApiOperation({ summary: "Bir vaqtda ko'p mahsulot kirim qilish" })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Roles(...MANAGERS)
   @Post('bulk-stock-in')
   bulkStockIn(@Body() dto: BulkStockInDto, @CurrentUser() user: any) {
     return this.inventoryService.bulkStockIn(dto, user.id);
+  }
+
+  @ApiOperation({ summary: 'Excel fayldan ommaviy mahsulotlar va jihozlarni omborga kirim qilish' })
+  @Roles(...MANAGERS)
+  @UseInterceptors(FileInterceptor('file'))
+  @Post('import-excel')
+  importExcel(
+    @UploadedFile() file: any,
+    @CurrentUser() user: any,
+  ) {
+    return this.inventoryService.importExcel(file.buffer, user.id);
   }
 }

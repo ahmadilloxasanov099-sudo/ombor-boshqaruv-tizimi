@@ -57,4 +57,12 @@ export class AuthController {
   changePassword(@CurrentUser() user: any, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user.id, dto);
   }
+
+  @ApiOperation({ summary: 'Parolni tekshirish' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('verify-password')
+  verifyPassword(@CurrentUser() user: any, @Body('password') password?: string) {
+    return this.authService.verifyPassword(user.id, password);
+  }
 }

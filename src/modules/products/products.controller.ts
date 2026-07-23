@@ -14,8 +14,18 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
-import { ProductsService } from './product.service';
+import { ProductsService } from './products.service';
 import { CurrentUser, Roles } from '../auth';
+
+const MANAGERS = [
+  UserRole.SUPER_ADMIN,
+  UserRole.VAZIRLIK_OMBORCHI,
+  UserRole.ORG_ADMIN,
+  UserRole.ORG_OMBORCHI,
+  UserRole.ADMIN,
+  UserRole.OMBORCHI,
+  UserRole.KADR,
+];
 
 @ApiTags('Products')
 @ApiBearerAuth()
@@ -25,28 +35,28 @@ export class ProductsController {
   constructor(private productsService: ProductsService) {}
 
   @ApiOperation({ summary: "Barcha mahsulotlar ro'yxati" })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR, UserRole.XODIM)
+  @Roles(...MANAGERS, UserRole.XODIM)
   @Get()
-  findAll(@Query() query: ProductQueryDto) {
-    return this.productsService.findAll(query);
+  findAll(@Query() query: ProductQueryDto, @CurrentUser() user: any) {
+    return this.productsService.findAll(query, user);
   }
 
   @ApiOperation({ summary: 'Kam qolgan mahsulotlar' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Roles(...MANAGERS)
   @Get('low-stock')
   getLowStock() {
     return this.productsService.getLowStock();
   }
 
   @ApiOperation({ summary: 'Bitta mahsulot' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR, UserRole.XODIM)
+  @Roles(...MANAGERS, UserRole.XODIM)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);
   }
 
   @ApiOperation({ summary: 'Mahsulot harakatlari tarixi' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @Roles(...MANAGERS)
   @Get(':id/history')
   getHistory(
     @Param('id') id: string,
@@ -61,7 +71,7 @@ export class ProductsController {
   }
 
   @ApiOperation({ summary: 'Mahsulotni tahrirlash' })
-  @Roles(UserRole.ADMIN)
+  @Roles(...MANAGERS)
   @Put(':id')
   update(
     @Param('id') id: string,
@@ -72,7 +82,7 @@ export class ProductsController {
   }
 
   @ApiOperation({ summary: "Mahsulotni o'chirish (soft delete)" })
-  @Roles(UserRole.ADMIN)
+  @Roles(...MANAGERS)
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: any) {
     return this.productsService.remove(id, user.id);

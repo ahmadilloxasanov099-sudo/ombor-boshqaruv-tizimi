@@ -8,18 +8,31 @@ import { HistoryQueryDto } from './dto/history-query.dto';
 import { CurrentUser, Roles } from '../auth';
 import { UserRole } from '@prisma/client';
 
+const MANAGERS = [
+  UserRole.SUPER_ADMIN,
+  UserRole.VAZIRLIK_OMBORCHI,
+  UserRole.ORG_ADMIN,
+  UserRole.ORG_OMBORCHI,
+  UserRole.ADMIN,
+  UserRole.OMBORCHI,
+  UserRole.KADR,
+  UserRole.XODIM,
+];
+
 @ApiTags('History')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
+@Roles(...MANAGERS)
 @Controller('history')
 export class HistoryController {
   constructor(private historyService: HistoryService) {}
 
-  @ApiOperation({ summary: 'Barcha harakatlar tarixi' })
+  @ApiOperation({ summary: "Barcha operatsiyalar tarixini olish" })
+  @Roles(...MANAGERS)
   @Get()
   findAll(@Query() query: HistoryQueryDto, @CurrentUser() user: any) {
-    return this.historyService.findAll(query, user.id, user.role);
+    const targetOrgId = query.organizationId ? query.organizationId : user?.organizationId;
+    return this.historyService.findAll({ ...query, organizationId: targetOrgId }, user.id, user.role);
   }
 
   @ApiOperation({ summary: 'Tarixni CSV formatda eksport qilish' })

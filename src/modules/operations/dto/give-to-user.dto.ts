@@ -10,9 +10,14 @@ export class GiveToUserDto {
   @IsUUID()
   productId: string;
 
-  @ApiProperty({ example: 'INV-2024-001' })
+  @ApiPropertyOptional({ example: 'INV-2024-001' })
+  @IsOptional()
   @IsString()
-  inventoryNumber: string;
+  inventoryNumber?: string;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  quantity?: number;
 
   @ApiPropertyOptional({ example: 'PF2X0001' })
   @IsOptional()

@@ -12,6 +12,7 @@ import { TransferUserDto } from './dto/transfer-user.dto';
 import { GiveToDeptDto } from './dto/give-to-dept.dto';
 import { ReturnFromDeptDto } from './dto/return-from-dept.dto';
 import { WriteOffDto } from './dto/writeoff.dto';
+import { BulkWriteOffDto } from './dto/bulk-write-off.dto';
 import { AssignToDeptDto } from './dto/assign-to-dept.dto';
 import { MailService } from '../nodemailer/mail.service';
 import { t } from 'src/common';
@@ -36,7 +37,6 @@ export class OperationsService {
         inventory.product &&
         inventory.quantity < inventory.minLevel
       ) {
-        // Fire and forget: send email asynchronously in background
         this.mailService
           .sendLowStockAlert(
             inventory.product.name,
@@ -52,20 +52,23 @@ export class OperationsService {
     }
   }
 
-  // STOCK_IN — omborga kirim (Product va Assetlar avtomatik yaratiladi)
   async stockIn(dto: StockInDto, performedById: string) {
-    // 1. Agar BERILADIGAN bo'lsa, inventar raqamlarini tekshiramiz (Senior Validation)
+    const performerUser = await this.prisma.user.findUnique({
+      where: { id: performedById },
+      select: { organizationId: true },
+    });
+    const performerOrgId = performerUser?.organizationId || null;
+
     if (dto.productType === ProductType.BERILADIGAN) {
       if (
         !dto.inventoryNumbers ||
         dto.inventoryNumbers.length !== dto.quantity
       ) {
         throw new BadRequestException(
-          `Jihozlar uchun aynan ${dto.quantity} ta inventar raqam yuborilishi shart!`,
+          `Inventar raqamlari soni (${dto.inventoryNumbers?.length || 0}) kirim qilinayotgan miqdorga (${dto.quantity}) teng bo'lishi kerak`,
         );
       }
 
-      // Kiritilgan inventar raqamlarining o'zaro takrorlanmasligini tekshirish
       const uniqueNumbers = new Set(dto.inventoryNumbers);
       if (uniqueNumbers.size !== dto.inventoryNumbers.length) {
         throw new BadRequestException(
@@ -73,10 +76,10 @@ export class OperationsService {
         );
       }
 
-      // Bazada ushbu inventar raqamlari allaqachon mavjud emasligini tekshirish
       const existingAsset = await this.prisma.asset.findFirst({
         where: {
           inventoryNumber: { in: dto.inventoryNumbers },
+          organizationId: performerOrgId,
           deletedAt: null,
         },
       });
@@ -93,6 +96,7 @@ export class OperationsService {
         where: {
           name: dto.name,
           productType: dto.productType,
+          organizationId: performerOrgId,
           deletedAt: null,
         },
         include: { inventory: true },
@@ -107,6 +111,7 @@ export class OperationsService {
             year: dto.year,
             description: dto.description,
             imageUrl: dto.imageUrl,
+            organizationId: performerOrgId,
           },
           include: { inventory: true },
         });
@@ -132,7 +137,6 @@ export class OperationsService {
         },
       });
 
-      // 2. Jihozlarni (Asset) avtomatik yaratish
       if (dto.productType === ProductType.BERILADIGAN && dto.inventoryNumbers) {
         for (let i = 0; i < dto.inventoryNumbers.length; i++) {
           await tx.asset.create({
@@ -140,6 +144,7 @@ export class OperationsService {
               productId: product.id,
               inventoryNumber: dto.inventoryNumbers[i],
               serialNumber: dto.serialNumbers?.[i] || null,
+              organizationId: performerOrgId,
               status: 'ACTIVE',
               purchasePrice: dto.unitPrice ?? null,
             },
@@ -158,6 +163,7 @@ export class OperationsService {
             ? new Date(dto.documentDate)
             : undefined,
           note: dto.note,
+          organizationId: performerOrgId,
         },
       });
 
@@ -168,72 +174,85 @@ export class OperationsService {
     });
   }
 
-  // GIVE_TO_USER — xodimga BERILADIGAN mahsulot berish
   async giveToUser(dto: GiveToUserDto, performedById: string) {
     const product = await this.prisma.product.findFirst({
       where: { id: dto.productId, deletedAt: null },
       include: { inventory: true },
     });
     if (!product) throw new NotFoundException('Mahsulot topilmadi');
-    if (product.productType !== ProductType.BERILADIGAN) {
-      throw new BadRequestException(
-        'Faqat BERILADIGAN mahsulot xodimga beriladi',
-      );
-    }
 
     const user = await this.prisma.user.findFirst({
       where: { id: dto.userId, deletedAt: null },
     });
     if (!user) throw new NotFoundException('Xodim topilmadi');
 
-    // Removed check here to prevent TOCTOU race condition
+    if (product.productType !== ProductType.BERILADIGAN) {
+      const qtyToGive = dto.quantity && dto.quantity > 0 ? dto.quantity : 1;
+      const result = await this.prisma.$transaction(async (tx) => {
+        const invUpdate = await tx.inventory.updateMany({
+          where: { productId: dto.productId, quantity: { gte: qtyToGive } },
+          data: { quantity: { decrement: qtyToGive } },
+        });
+        if (invUpdate.count === 0) {
+          throw new BadRequestException("Omborda yetarli miqdorda TMZ yo'q");
+        }
+
+        await tx.operation.create({
+          data: {
+            type: 'GIVE_TO_USER',
+            quantity: qtyToGive,
+            userId: dto.userId,
+            productId: dto.productId,
+            performedById,
+            documentNumber: dto.documentNumber,
+            note: dto.note,
+          },
+        });
+
+        return { message: `${product.name} (${qtyToGive} ${product.unit || 'dona'}) xodimga berildi` };
+      });
+
+      void this.checkStockAndAlert(dto.productId);
+      return result;
+    }
+
+    if (!dto.inventoryNumber) {
+      throw new BadRequestException("Asosiy vositalar uchun inventar raqami tanlanishi shart!");
+    }
 
     const existingAsset = await this.prisma.asset.findUnique({
       where: { inventoryNumber: dto.inventoryNumber },
       include: { assignments: { where: { returnedAt: null } } },
     });
 
-    if (existingAsset) {
-      if (existingAsset.productId !== dto.productId) {
-        throw new BadRequestException(
-          'Bu inventar raqami boshqa mahsulotga tegishli',
-        );
-      }
-      if (existingAsset.status !== 'ACTIVE') {
-        throw new BadRequestException('Bu jihoz faol holatda emas');
-      }
-      if (existingAsset.assignments.length > 0) {
-        throw new BadRequestException(
-          'Bu jihoz hozirda boshqa xodimga biriktirilgan',
-        );
-      }
+    if (!existingAsset) {
+      throw new BadRequestException('Ushbu inventar raqami topilmadi. Avval omborga kirim qiling!');
+    }
+
+    if (existingAsset.productId !== dto.productId) {
+      throw new BadRequestException(
+        'Bu inventar raqami boshqa mahsulotga tegishli',
+      );
+    }
+    if (existingAsset.status !== 'ACTIVE') {
+      throw new BadRequestException('Bu jihoz faol holatda emas');
+    }
+    if (existingAsset.assignments.length > 0) {
+      throw new BadRequestException(
+        'Bu jihoz hozirda boshqa xodimga biriktirilgan',
+      );
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      let assetId: string;
-
-      if (!existingAsset) {
-        const newAsset = await tx.asset.create({
-          data: {
-            productId: dto.productId,
-            inventoryNumber: dto.inventoryNumber,
-            serialNumber: dto.serialNumber,
-            status: 'ACTIVE',
-            purchasePrice: product.inventory?.unitPrice ?? null,
-          },
+      const assetId = existingAsset.id;
+      if (
+        dto.serialNumber &&
+        existingAsset.serialNumber !== dto.serialNumber
+      ) {
+        await tx.asset.update({
+          where: { id: existingAsset.id },
+          data: { serialNumber: dto.serialNumber },
         });
-        assetId = newAsset.id;
-      } else {
-        assetId = existingAsset.id;
-        if (
-          dto.serialNumber &&
-          existingAsset.serialNumber !== dto.serialNumber
-        ) {
-          await tx.asset.update({
-            where: { id: existingAsset.id },
-            data: { serialNumber: dto.serialNumber },
-          });
-        }
       }
 
       await tx.assignment.create({
@@ -277,7 +296,6 @@ export class OperationsService {
     return result;
   }
 
-  // ASSIGN_TO_DEPT — bo'limga BERILADIGAN (shared) jihoz biriktirish
   async assignToDept(dto: AssignToDeptDto, performedById: string) {
     const product = await this.prisma.product.findFirst({
       where: { id: dto.productId, deletedAt: null },
@@ -300,55 +318,40 @@ export class OperationsService {
       include: { assignments: { where: { returnedAt: null } } },
     });
 
-    if (existingAsset) {
-      if (existingAsset.productId !== dto.productId) {
-        throw new BadRequestException(
-          'Bu inventar raqami boshqa mahsulotga tegishli',
-        );
-      }
-      if (existingAsset.status !== 'ACTIVE') {
-        throw new BadRequestException('Bu jihoz faol holatda emas');
-      }
-      if (existingAsset.assignments.length > 0) {
-        throw new BadRequestException(
-          'Bu jihoz hozirda kimga yoki qaysi bo‘limga biriktirilgan',
-        );
-      }
+    if (!existingAsset) {
+      throw new BadRequestException('Ushbu inventar raqami topilmadi. Avval omborga kirim qiling!');
+    }
+
+    if (existingAsset.productId !== dto.productId) {
+      throw new BadRequestException(
+        'Bu inventar raqami boshqa mahsulotga tegishli',
+      );
+    }
+    if (existingAsset.status !== 'ACTIVE') {
+      throw new BadRequestException('Bu jihoz faol holatda emas');
+    }
+    if (existingAsset.assignments.length > 0) {
+      throw new BadRequestException(
+        'Bu jihoz hozirda kimga yoki qaysi bo‘limga biriktirilgan',
+      );
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      let assetId: string;
-
-      if (!existingAsset) {
-        const newAsset = await tx.asset.create({
-          data: {
-            productId: dto.productId,
-            inventoryNumber: dto.inventoryNumber,
-            serialNumber: dto.serialNumber,
-            status: 'ACTIVE',
-            purchasePrice: product.inventory?.unitPrice ?? null,
-          },
+      const assetId = existingAsset.id;
+      if (
+        dto.serialNumber &&
+        existingAsset.serialNumber !== dto.serialNumber
+      ) {
+        await tx.asset.update({
+          where: { id: existingAsset.id },
+          data: { serialNumber: dto.serialNumber },
         });
-        assetId = newAsset.id;
-      } else {
-        assetId = existingAsset.id;
-        if (
-          dto.serialNumber &&
-          existingAsset.serialNumber !== dto.serialNumber
-        ) {
-          await tx.asset.update({
-            where: { id: existingAsset.id },
-            data: { serialNumber: dto.serialNumber },
-          });
-        }
       }
 
-      // Create assignment to the department
       await tx.assignment.create({
         data: { departmentId: dto.departmentId, assetId },
       });
 
-      // Update aggregate count in DepartmentAsset
       await tx.departmentAsset.upsert({
         where: {
           departmentId_productId: {
@@ -364,7 +367,6 @@ export class OperationsService {
         },
       });
 
-      // Decrement warehouse stock
       const invUpdate = await tx.inventory.updateMany({
         where: { productId: dto.productId, quantity: { gte: 1 } },
         data: { quantity: { decrement: 1 } },
@@ -402,7 +404,6 @@ export class OperationsService {
     return result;
   }
 
-  // RETURN_FROM_USER — xodimdan jihoz qaytarish
   async returnFromUser(dto: ReturnFromUserDto, performedById: string) {
     const asset = await this.prisma.asset.findFirst({
       where: { id: dto.assetId, deletedAt: null },
@@ -445,7 +446,6 @@ export class OperationsService {
     });
   }
 
-  // TRANSFER_USER — bir xodimdan ikkinchisiga
   async transferUser(dto: TransferUserDto, performedById: string) {
     const asset = await this.prisma.asset.findFirst({
       where: { id: dto.assetId, deletedAt: null },
@@ -497,7 +497,6 @@ export class OperationsService {
     });
   }
 
-  // GIVE_TO_DEPT — bo'limga SARFLANADIGAN berish
   async giveToDept(dto: GiveToDeptDto, performedById: string) {
     const product = await this.prisma.product.findFirst({
       where: { id: dto.productId, deletedAt: null },
@@ -509,8 +508,6 @@ export class OperationsService {
         "Faqat SARFLANADIGAN mahsulot bo'limga beriladi",
       );
     }
-
-    // Removed check here to prevent TOCTOU race condition
 
     const department = await this.prisma.department.findFirst({
       where: { id: dto.departmentId, deletedAt: null },
@@ -525,21 +522,6 @@ export class OperationsService {
       if (invUpdate.count === 0) {
         throw new BadRequestException("Omborda yetarli miqdor yo'q");
       }
-
-      await tx.departmentAsset.upsert({
-        where: {
-          departmentId_productId: {
-            departmentId: dto.departmentId,
-            productId: dto.productId,
-          },
-        },
-        update: { quantity: { increment: dto.quantity } },
-        create: {
-          departmentId: dto.departmentId,
-          productId: dto.productId,
-          quantity: dto.quantity,
-        },
-      });
 
       await tx.operation.create({
         data: {
@@ -560,14 +542,12 @@ export class OperationsService {
     return result;
   }
 
-  // RETURN_FROM_DEPT — bo'limdan qaytarish (Sarflanadigan va Beriladigan shared jihozlar)
   async returnFromDept(dto: ReturnFromDeptDto, performedById: string) {
     const product = await this.prisma.product.findFirst({
       where: { id: dto.productId, deletedAt: null },
     });
     if (!product) throw new NotFoundException('Mahsulot topilmadi');
 
-    // 1. Agar BERILADIGAN jihoz bo'lsa
     if (product.productType === ProductType.BERILADIGAN) {
       if (!dto.assetId) {
         throw new BadRequestException(
@@ -594,13 +574,11 @@ export class OperationsService {
       }
 
       return this.prisma.$transaction(async (tx) => {
-        // Mark assignment as returned
         await tx.assignment.update({
           where: { id: assignment.id },
           data: { returnedAt: new Date() },
         });
 
-        // Decrement quantity in DepartmentAsset
         await tx.departmentAsset.update({
           where: {
             departmentId_productId: {
@@ -611,13 +589,11 @@ export class OperationsService {
           data: { quantity: { decrement: 1 } },
         });
 
-        // Increment quantity in Inventory
         await tx.inventory.update({
           where: { productId: dto.productId },
           data: { quantity: { increment: 1 } },
         });
 
-        // Log operation
         await tx.operation.create({
           data: {
             type: 'RETURN_FROM_DEPT',
@@ -635,7 +611,6 @@ export class OperationsService {
       });
     }
 
-    // 2. Agar SARFLANADIGAN material bo'lsa
     if (!dto.quantity || dto.quantity <= 0) {
       throw new BadRequestException(
         'Sarflanadigan materialni qaytarish uchun quantity 0 dan katta bo‘lishi shart!',
@@ -676,7 +651,6 @@ export class OperationsService {
     });
   }
 
-  // WRITE_OFF — hisobdan chiqarish
   async writeOff(dto: WriteOffDto, performedById: string) {
     if (dto.assetId) {
       const asset = await this.prisma.asset.findFirst({
@@ -700,6 +674,14 @@ export class OperationsService {
           data: { status: 'WRITTEN_OFF', deletedAt: new Date() },
         });
 
+        const invUpdate = await tx.inventory.updateMany({
+          where: { productId: asset.productId, quantity: { gte: 1 } },
+          data: { quantity: { decrement: 1 } },
+        });
+        if (invUpdate.count === 0) {
+          throw new BadRequestException("Omborda yetarli miqdor yo'q");
+        }
+
         await tx.operation.create({
           data: {
             type: 'WRITE_OFF',
@@ -719,14 +701,51 @@ export class OperationsService {
       return result;
     }
 
-    // SARFLANADIGAN hisobdan chiqarish
     const product = await this.prisma.product.findFirst({
       where: { id: dto.productId, deletedAt: null },
       include: { inventory: true },
     });
     if (!product) throw new NotFoundException('Mahsulot topilmadi');
 
-    // Removed check here to prevent TOCTOU race condition
+    if (dto.departmentId) {
+      const department = await this.prisma.department.findFirst({
+        where: { id: dto.departmentId, deletedAt: null },
+      });
+      if (!department) throw new NotFoundException("Bo'lim topilmadi");
+
+      const result = await this.prisma.$transaction(async (tx) => {
+        const deptAssetUpdate = await tx.departmentAsset.updateMany({
+          where: {
+            departmentId: dto.departmentId,
+            productId: dto.productId,
+            quantity: { gte: dto.quantity! },
+          },
+          data: { quantity: { decrement: dto.quantity! } },
+        });
+
+        if (deptAssetUpdate.count === 0) {
+          throw new BadRequestException(
+            "Bo'limda ushbu materialdan yetarli miqdor mavjud emas",
+          );
+        }
+
+        await tx.operation.create({
+          data: {
+            type: 'WRITE_OFF',
+            quantity: dto.quantity!,
+            productId: dto.productId!,
+            departmentId: dto.departmentId,
+            performedById,
+            documentNumber: dto.documentNumber,
+            note: dto.note,
+          },
+        });
+
+        return { message: "Material bo'limdan muvaffaqiyatli hisobdan chiqarildi" };
+      });
+
+      return result;
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const invUpdate = await tx.inventory.updateMany({
@@ -745,6 +764,7 @@ export class OperationsService {
           performedById,
           documentNumber: dto.documentNumber,
           note: dto.note,
+          departmentId: dto.departmentId,
         },
       });
 
@@ -752,6 +772,137 @@ export class OperationsService {
     });
 
     void this.checkStockAndAlert(dto.productId!);
+    return result;
+  }
+
+  async bulkWriteOff(dto: BulkWriteOffDto, performedById: string) {
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException('Hisobdan chiqarish uchun mahsulotlar tanlanishi kerak');
+    }
+
+    const docNum = dto.documentNumber || `DAL-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      for (const item of dto.items) {
+        const product = await tx.product.findFirst({
+          where: { id: item.productId, deletedAt: null },
+          include: { inventory: true },
+        });
+
+        if (!product) {
+          throw new NotFoundException(`Mahsulot topilmadi: ${item.productId}`);
+        }
+
+        if (product.productType === ProductType.BERILADIGAN) {
+          if (item.assetId) {
+            const asset = await tx.asset.findFirst({
+              where: { id: item.assetId, deletedAt: null },
+              include: { assignments: { where: { returnedAt: null } } },
+            });
+            if (!asset) {
+              throw new NotFoundException(`Jihoz topilmadi: ${item.assetId}`);
+            }
+            if (asset.assignments.length > 0) {
+              throw new BadRequestException(`"${product.name}" jihozi xodimga biriktirilgan, avval qaytarib oling`);
+            }
+
+            await tx.asset.update({
+              where: { id: item.assetId },
+              data: { status: 'WRITTEN_OFF', deletedAt: new Date() },
+            });
+
+            const invUpdate = await tx.inventory.updateMany({
+              where: { productId: product.id, quantity: { gte: 1 } },
+              data: { quantity: { decrement: 1 } },
+            });
+            if (invUpdate.count === 0) {
+              throw new BadRequestException(`"${product.name}" mahsulotidan omborda yetarli miqdor yo'q`);
+            }
+
+            await tx.operation.create({
+              data: {
+                type: 'WRITE_OFF',
+                quantity: 1,
+                assetId: item.assetId,
+                productId: product.id,
+                performedById,
+                documentNumber: docNum,
+                note: dto.note,
+              },
+            });
+          } else {
+            const assets = await tx.asset.findMany({
+              where: {
+                productId: product.id,
+                deletedAt: null,
+                status: 'ACTIVE',
+                assignments: { none: { returnedAt: null } },
+              },
+              take: item.quantity,
+            });
+
+            if (assets.length < item.quantity) {
+              throw new BadRequestException(
+                `"${product.name}" jihozida omborda yetarli miqdor yo'q (Mavjud: ${assets.length}, So'ralgan: ${item.quantity})`
+              );
+            }
+
+            for (const asset of assets) {
+              await tx.asset.update({
+                where: { id: asset.id },
+                data: { status: 'WRITTEN_OFF', deletedAt: new Date() },
+              });
+
+              await tx.operation.create({
+                data: {
+                  type: 'WRITE_OFF',
+                  quantity: 1,
+                  assetId: asset.id,
+                  productId: product.id,
+                  performedById,
+                  documentNumber: docNum,
+                  note: dto.note,
+                },
+              });
+            }
+
+            const invUpdate = await tx.inventory.updateMany({
+              where: { productId: product.id, quantity: { gte: item.quantity } },
+              data: { quantity: { decrement: item.quantity } },
+            });
+            if (invUpdate.count === 0) {
+              throw new BadRequestException(`"${product.name}" mahsulotidan omborda yetarli miqdor yo'q`);
+            }
+          }
+        } else {
+          const invUpdate = await tx.inventory.updateMany({
+            where: { productId: product.id, quantity: { gte: item.quantity } },
+            data: { quantity: { decrement: item.quantity } },
+          });
+          if (invUpdate.count === 0) {
+            throw new BadRequestException(`"${product.name}" materialidan omborda yetarli miqdor yo'q`);
+          }
+
+          await tx.operation.create({
+            data: {
+              type: 'WRITE_OFF',
+              quantity: item.quantity,
+              productId: product.id,
+              performedById,
+              documentNumber: docNum,
+              note: dto.note,
+            },
+          });
+        }
+      }
+
+      return { message: 'Belgilangan mahsulotlar muvaffaqiyatli hisobdan chiqarildi', documentNumber: docNum };
+    });
+
+    for (const item of dto.items) {
+      void this.checkStockAndAlert(item.productId);
+    }
+
     return result;
   }
 
@@ -780,6 +931,34 @@ export class OperationsService {
         day: 'numeric',
       },
     );
+
+    const relatedOperations = operation.documentNumber
+      ? await this.prisma.operation.findMany({
+          where: {
+            documentNumber: operation.documentNumber,
+            type: operation.type,
+          },
+          include: {
+            product: true,
+            asset: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        })
+      : [operation];
+
+    const tableRows = relatedOperations.map((op, idx) => {
+      const unitVal = op.product?.unit;
+      const unitText = unitVal ? (t(`common.units.${unitVal}`) || unitVal) : t('pdf.unit_ta', {}, 'ta');
+      return `
+        <tr>
+          <td class="center" style="text-align: center;">${idx + 1}</td>
+          <td>${op.product?.name || t('pdf.unknown_product', {}, 'Noma‘lum mahsulot')}</td>
+          <td>${op.asset?.inventoryNumber || '—'}</td>
+          <td>${op.asset?.serialNumber || '—'}</td>
+          <td class="center" style="text-align: center;">${op.quantity} ${unitText}</td>
+        </tr>
+      `;
+    }).join('');
 
     let actTitle = t('pdf.title_give_user', {}, 'QABUL QILISH - TOPSHIRISH DALOLATNOMASI');
     let giverTitle = t('pdf.role_giver_give', {}, 'Topshirdi (Mas’ul shaxs)');
@@ -934,13 +1113,7 @@ export class OperationsService {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td class="center">1</td>
-              <td>${operation.product?.name || t('pdf.unknown_product', {}, 'Noma‘lum mahsulot')}</td>
-              <td>${operation.asset?.inventoryNumber || '—'}</td>
-              <td>${operation.asset?.serialNumber || '—'}</td>
-              <td class="center">${operation.quantity} ${operation.product?.unit || t('pdf.unit_ta', {}, 'ta')}</td>
-            </tr>
+            ${tableRows}
           </tbody>
         </table>
 

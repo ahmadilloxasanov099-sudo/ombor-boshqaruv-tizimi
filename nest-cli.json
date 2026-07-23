@@ -7,7 +7,7 @@
     "assets": [
       {
         "include": "i18n/**/*.json",
-        "outDir": "dist/src/i18n",
+        "outDir": "dist/src",
         "watchAssets": true
       }
     ]

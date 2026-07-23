@@ -10,10 +10,39 @@ datasource db {
 // ─── ENUMLAR ───────────────────────────────────────────
 
 enum UserRole {
-  ADMIN
-  OMBORCHI
-  KADR
-  XODIM
+  SUPER_ADMIN      // Vazirlik Admini (Barcha tashkilotlarni nazorat qiladi)
+  VAZIRLIK_OMBORCHI// Vazirlik Omborchisi (Vazirlik omborini yuritadi, so'rovlarni tasdiqlaydi)
+  ORG_ADMIN        // Quyi tashkilot admini
+  ORG_OMBORCHI     // Quyi tashkilot omborchisi
+  ADMIN            // Mavjud Admin roli
+  OMBORCHI         // Mavjud Omborchi roli
+  KADR             // Kadrlar bo'limi
+  XODIM            // Oddiy xodim
+}
+
+enum OrganizationType {
+  MINISTRY // Vazirlik (Markaziy boshqarma)
+  SUB_ORG  // Quyi tashkilot
+}
+
+enum RequestStatus {
+  PENDING   // Kutilmoqda
+  APPROVED  // Vazirlik tasdiqladi (O'chirildi)
+  REJECTED  // Rad etildi
+}
+
+enum EntityType {
+  PRODUCT
+  ASSET
+  OPERATION
+  USER
+  DEPARTMENT
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  OFFBOARDING_PENDING
+  OFFBOARDED
 }
 
 enum ProductType {
@@ -51,12 +80,45 @@ enum AuditAction {
   DELETE
 }
 
+// ─── ORGANIZATION ───────────────────────────────────────
+
+model Organization {
+  id          String           @id @default(uuid())
+  name        String
+  code        String           @unique
+  type        OrganizationType @default(SUB_ORG)
+  address     String?
+  phone       String?
+
+  parentId    String?
+  parent      Organization?    @relation("OrgHierarchy", fields: [parentId], references: [id])
+  subOrgs     Organization[]   @relation("OrgHierarchy")
+
+  departments      Department[]
+  users            User[]
+  products         Product[]
+  assets           Asset[]
+  operations       Operation[]
+  deletionRequests DeletionRequest[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([type])
+  @@index([parentId])
+  @@index([deletedAt])
+}
+
 // ─── DEPARTMENT ─────────────────────────────────────────
 
 model Department {
   id          String  @id @default(uuid())
   name        String
   description String?
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   users            User[]
   departmentAssets DepartmentAsset[]
@@ -67,30 +129,55 @@ model Department {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([organizationId])
   @@index([deletedAt])
 }
 
 // ─── USER ───────────────────────────────────────────────
 
 model User {
-  id           String  @id @default(uuid())
-  fullName     String
-  username     String  @unique
-  passwordHash String
-  phone        String?
-  position     String?
+  id            String  @id @default(uuid())
+  fullName      String
+  username      String  @unique
+  passwordHash  String
+  phone         String?
+  internalPhone String?
+  position      String?
 
-  role     UserRole @default(XODIM)
-  isActive Boolean  @default(true)
+  role             UserRole         @default(XODIM)
+  employmentStatus EmploymentStatus @default(ACTIVE)
+  isActive         Boolean          @default(true)
 
-  departmentId String
-  department   Department @relation(fields: [departmentId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
 
   assignments Assignment[]
 
   targetOperations    Operation[] @relation("OperationTargetUser")
   fromOperations      Operation[] @relation("OperationFromUser")
   performedOperations Operation[] @relation("OperationPerformer")
+
+  // Offboarding relations
+  offboardingStartedAt   DateTime?
+  offboardingStartedById String?
+  offboardingStartedBy   User?     @relation("OffboardingStartedBy", fields: [offboardingStartedById], references: [id])
+  startedOffboardings    User[]    @relation("OffboardingStartedBy")
+
+  warehouseApprovedAt    DateTime?
+  warehouseApprovedById  String?
+  warehouseApprovedBy    User?     @relation("WarehouseApprovedBy", fields: [warehouseApprovedById], references: [id])
+  approvedOffboardings   User[]    @relation("WarehouseApprovedBy")
+
+  offboardingCompletedAt   DateTime?
+  offboardingCompletedById String?
+  offboardingCompletedBy   User?     @relation("OffboardingCompletedBy", fields: [offboardingCompletedById], references: [id])
+  completedOffboardings   User[]    @relation("OffboardingCompletedBy")
+
+  requestedDeletionRequests DeletionRequest[] @relation("DeletionRequestRequestedBy")
+  reviewedDeletionRequests  DeletionRequest[] @relation("DeletionRequestReviewedBy")
 
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
@@ -99,8 +186,10 @@ model User {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([organizationId])
   @@index([departmentId])
   @@index([role])
+  @@index([employmentStatus])
   @@index([deletedAt])
 }
 
@@ -115,6 +204,9 @@ model Product {
   description String?
   imageUrl    String?
 
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   deletedAt DateTime?
 
   inventory        Inventory?
@@ -125,6 +217,7 @@ model Product {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([organizationId])
   @@index([name])
   @@index([productType])
   @@index([deletedAt])
@@ -159,6 +252,9 @@ model Asset {
   serialNumber    String?
   status          AssetStatus @default(ACTIVE)
 
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   purchaseDate  DateTime?
   purchasePrice Decimal?  @db.Decimal(12, 2)
   warrantyExp   DateTime?
@@ -173,6 +269,7 @@ model Asset {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([organizationId])
   @@index([productId])
   @@index([status])
   @@index([inventoryNumber])
@@ -231,6 +328,9 @@ model Operation {
 
   quantity Int @default(1)
 
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   productId    String
   assetId      String?
   departmentId String?
@@ -252,6 +352,7 @@ model Operation {
 
   createdAt DateTime @default(now())
 
+  @@index([organizationId])
   @@index([type])
   @@index([productId])
   @@index([assetId])
@@ -259,6 +360,37 @@ model Operation {
   @@index([departmentId])
   @@index([createdAt])
   @@index([documentNumber])
+}
+
+// ─── DELETION REQUEST ────────────────────────────────────
+
+model DeletionRequest {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+
+  requestedById  String
+  requestedBy    User          @relation("DeletionRequestRequestedBy", fields: [requestedById], references: [id])
+
+  entityType     EntityType
+  entityId       String
+  entityName     String?       // O'chirilmoqchi bo'lgan obyekt nomi/ma'lumoti
+  reason         String        // O'chirish sababi
+
+  status         RequestStatus @default(PENDING)
+
+  reviewedById   String?
+  reviewedBy     User?         @relation("DeletionRequestReviewedBy", fields: [reviewedById], references: [id])
+  reviewComment  String?
+  reviewedAt     DateTime?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId])
+  @@index([requestedById])
+  @@index([status])
+  @@index([entityType])
 }
 
 // ─── REFRESH TOKEN ──────────────────────────────────────

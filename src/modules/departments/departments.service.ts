@@ -17,9 +17,27 @@ export class DepartmentsService {
     private auditService: AuditService,
   ) {}
 
-  async findAll() {
+  async findAll(targetOrgId?: string, currentUser?: any) {
+    let orgFilter: any = {};
+
+    if (targetOrgId) {
+      if (!currentUser || currentUser.organizationId === targetOrgId || currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'VAZIRLIK_OMBORCHI') {
+        orgFilter = {
+          OR: [
+            { organizationId: targetOrgId },
+            { organizationId: null },
+          ],
+        };
+      } else {
+        orgFilter = { organizationId: targetOrgId };
+      }
+    }
+
     return this.prisma.department.findMany({
-      where: { deletedAt: null },
+      where: {
+        deletedAt: null,
+        ...orgFilter,
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
@@ -39,6 +57,8 @@ export class DepartmentsService {
             id: true,
             fullName: true,
             username: true,
+            phone: true,
+            internalPhone: true,
             position: true,
           },
         },
@@ -109,8 +129,15 @@ export class DepartmentsService {
   }
 
   async create(dto: CreateDepartmentDto, createdBy: string) {
+    const creatorUser = await this.prisma.user.findUnique({
+      where: { id: createdBy },
+      select: { organizationId: true },
+    });
+
+    const orgId = creatorUser?.organizationId || null;
+
     const existing = await this.prisma.department.findFirst({
-      where: { name: dto.name, deletedAt: null },
+      where: { name: dto.name, organizationId: orgId, deletedAt: null },
     });
 
     if (existing) {
@@ -118,7 +145,10 @@ export class DepartmentsService {
     }
 
     const department = await this.prisma.department.create({
-      data: dto,
+      data: {
+        ...dto,
+        organizationId: orgId,
+      },
     });
 
     await this.auditService.log({

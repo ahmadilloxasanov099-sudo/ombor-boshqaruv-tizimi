@@ -52,4 +52,9 @@ export class HistoryQueryDto extends PaginationDto {
   @IsOptional()
   @IsDateString()
   to?: string;
+
+  @ApiPropertyOptional({ description: "Tashkilot ID si bo'yicha filtri" })
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
 }

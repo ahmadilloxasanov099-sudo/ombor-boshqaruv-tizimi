@@ -9,8 +9,11 @@ import {
   Put,
   Query,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import * as express from 'express';
@@ -19,8 +22,18 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserQueryDto } from './dto/user-query.dto';
-import { UsersService } from './user.service';
+import { UsersService } from './users.service';
 import { CurrentUser, Roles } from '../auth';
+
+const MANAGERS = [
+  UserRole.SUPER_ADMIN,
+  UserRole.VAZIRLIK_OMBORCHI,
+  UserRole.ORG_ADMIN,
+  UserRole.ORG_OMBORCHI,
+  UserRole.ADMIN,
+  UserRole.OMBORCHI,
+  UserRole.KADR,
+];
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -30,41 +43,62 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @ApiOperation({ summary: "Barcha xodimlar ro'yxati" })
-  @Roles(UserRole.ADMIN, UserRole.KADR)
+  @Roles(...MANAGERS)
   @Get()
-  findAll(@Query() query: UserQueryDto) {
-    return this.usersService.findAll(query);
+  findAll(@Query() query: UserQueryDto, @CurrentUser() user: any) {
+    const targetOrgId = query.organizationId
+      ? query.organizationId
+      : (user?.organizationId ?? undefined);
+    return this.usersService.findAll(
+      { ...query, organizationId: targetOrgId },
+      user,
+    );
   }
 
   @ApiOperation({ summary: 'Xodimlarni Excel (CSV) formatida eksport qilish' })
-  @Roles(UserRole.ADMIN, UserRole.KADR)
+  @Roles(...MANAGERS)
   @Get('export')
-  async exportCsv(@Query() query: UserQueryDto, @Res() res: express.Response) {
-    const csvContent = await this.usersService.exportCsv(query);
+  async exportCsv(
+    @Query() query: UserQueryDto,
+    @CurrentUser() user: any,
+    @Res() res: express.Response,
+  ) {
+    const targetOrgId = query.organizationId
+      ? query.organizationId
+      : (user?.organizationId ?? undefined);
+    const csvContent = await this.usersService.exportCsv({
+      ...query,
+      organizationId: targetOrgId,
+    });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=xodimlar.csv',
-    );
+    res.setHeader('Content-Disposition', 'attachment; filename=xodimlar.csv');
     return res.status(200).send(csvContent);
   }
 
+  @ApiOperation({ summary: 'Xodimlarni Excel faylidan ommaviy yuklash' })
+  @Roles(...MANAGERS)
+  @UseInterceptors(FileInterceptor('file'))
+  @Post('import-excel')
+  importExcel(@UploadedFile() file: any, @CurrentUser() user: any) {
+    return this.usersService.importExcel(file.buffer, user.id);
+  }
+
   @ApiOperation({ summary: "Bitta xodim ma'lumoti" })
-  @Roles(UserRole.ADMIN, UserRole.KADR)
+  @Roles(...MANAGERS)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
   }
 
   @ApiOperation({ summary: 'Xodimda hozir nima bor' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
+  @Roles(...MANAGERS)
   @Get(':id/assignments')
   getAssignments(@Param('id') id: string) {
     return this.usersService.getAssignments(id);
   }
 
   @ApiOperation({ summary: 'Xodim tarixi' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI, UserRole.KADR)
+  @Roles(...MANAGERS, UserRole.XODIM)
   @Get(':id/history')
   getHistory(@Param('id') id: string, @CurrentUser() currentUser: any) {
     if (currentUser.role === UserRole.XODIM && currentUser.id !== id) {
@@ -74,14 +108,14 @@ export class UsersController {
   }
 
   @ApiOperation({ summary: "Yangi xodim qo'shish" })
-  @Roles(UserRole.ADMIN)
+  @Roles(...MANAGERS)
   @Post()
   create(@Body() dto: CreateUserDto, @CurrentUser() user: any) {
     return this.usersService.create(dto, user.id);
   }
 
   @ApiOperation({ summary: 'Xodimni tahrirlash' })
-  @Roles(UserRole.ADMIN)
+  @Roles(...MANAGERS)
   @Put(':id')
   update(
     @Param('id') id: string,
@@ -91,29 +125,31 @@ export class UsersController {
     return this.usersService.update(id, dto, user.id);
   }
 
-  @ApiOperation({ summary: 'Bloklash yoki faollashtirish' })
-  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Xodimni bloklash / faollashtirish' })
+  @Roles(...MANAGERS)
   @Patch(':id/status')
   toggleStatus(@Param('id') id: string, @CurrentUser() user: any) {
     return this.usersService.toggleStatus(id, user.id);
   }
 
   @ApiOperation({ summary: "Xodimni o'chirish (soft delete)" })
-  @Roles(UserRole.ADMIN)
+  @Roles(...MANAGERS)
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: any) {
     return this.usersService.remove(id, user.id);
   }
 
-  @ApiOperation({ summary: 'Xodimdan barcha jihozlarni qaytarish' })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @ApiOperation({ summary: 'Xodimning barcha jihozlarini qaytarish' })
+  @Roles(...MANAGERS)
   @Post(':id/bulk-return')
   bulkReturn(@Param('id') id: string, @CurrentUser() user: any) {
     return this.usersService.bulkReturn(id, user.id);
   }
 
-  @ApiOperation({ summary: "Barcha jihozlarni boshqa xodimga o'tkazish" })
-  @Roles(UserRole.ADMIN, UserRole.OMBORCHI)
+  @ApiOperation({
+    summary: "Xodimning barcha jihozlarini boshqa xodimga o'tkazish",
+  })
+  @Roles(...MANAGERS)
   @Post(':id/bulk-transfer')
   bulkTransfer(
     @Param('id') id: string,

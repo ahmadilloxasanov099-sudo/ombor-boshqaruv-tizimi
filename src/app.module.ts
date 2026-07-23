@@ -8,11 +8,14 @@ import { AuthModule } from './modules/auth';
 import { DepartmentsModule } from './modules/departments';
 import { UsersModule } from './modules/users';
 import { ProductsModule } from './modules/products';
-import { HistoryModule } from './modules/history/history.module';
+import { HistoryModule } from './modules/history';
 import { InventoryModule } from './modules/inventory';
 import { OperationsModule } from './modules/operations';
-import { StatsModule } from './modules/stats/stats.module';
-import { MailModule } from './modules/nodemailer/mail.module';
+import { StatsModule } from './modules/stats';
+import { MailModule } from './modules/nodemailer';
+import { EventsModule } from './modules/events';
+import { OrganizationsModule } from './modules/organizations';
+import { DeletionRequestsModule } from './modules/deletion-requests';
 
 @Module({
   imports: [
@@ -30,7 +33,10 @@ import { MailModule } from './modules/nodemailer/mail.module';
       ],
     }),
     PrismaModule,
+    EventsModule,
     AuthModule,
+    OrganizationsModule,
+    DeletionRequestsModule,
     CommonModule,
     DepartmentsModule,
     UsersModule,

@@ -39,6 +39,12 @@ export class CreateUserDto {
   @IsString()
   phone?: string;
 
+  @ApiPropertyOptional({ example: '1025' })
+  @IsOptional()
+  @IsString()
+  @MinLength(4, { message: 'Ichki telefon raqami kamida 4 xonali bo\'lishi shart' })
+  internalPhone?: string;
+
   @ApiPropertyOptional({ example: 'Bosh mutaxassis' })
   @IsOptional()
   @IsString()

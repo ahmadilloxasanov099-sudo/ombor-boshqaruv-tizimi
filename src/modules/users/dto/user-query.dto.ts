@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { EmploymentStatus, UserRole } from '@prisma/client';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { PaginationDto } from 'src/common/dto';
 
@@ -24,4 +24,14 @@ export class UserQueryDto extends PaginationDto {
   @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;
+
+  @ApiPropertyOptional({ enum: EmploymentStatus, description: "Ish joyi holati bo'yicha filtri" })
+  @IsOptional()
+  @IsEnum(EmploymentStatus)
+  employmentStatus?: EmploymentStatus;
+
+  @ApiPropertyOptional({ description: "Tashkilot ID si bo'yicha filtri" })
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
 }

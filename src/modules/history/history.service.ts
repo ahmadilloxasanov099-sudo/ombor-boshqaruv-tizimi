@@ -20,6 +20,7 @@ export class HistoryService {
       productId,
       assetId,
       inventoryNumber,
+      organizationId,
       from,
       to,
     } = query;
@@ -27,7 +28,22 @@ export class HistoryService {
 
     const targetUserId = currentUserRole === 'XODIM' ? currentUserId : userId;
 
+    let orgFilter: any = {};
+    if (organizationId) {
+      if (currentUserRole === 'SUPER_ADMIN' || currentUserRole === 'VAZIRLIK_OMBORCHI' || currentUserRole === 'ADMIN') {
+        orgFilter = {
+          OR: [
+            { organizationId },
+            { organizationId: null },
+          ],
+        };
+      } else {
+        orgFilter = { organizationId };
+      }
+    }
+
     const where: any = {
+      ...orgFilter,
       ...(operationType && { type: operationType }),
       ...(departmentId && { departmentId }),
       ...(productId && { productId }),

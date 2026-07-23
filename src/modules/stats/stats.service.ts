@@ -6,6 +6,11 @@ export class StatsService {
   constructor(private prisma: PrismaService) {}
 
   async getOverview() {
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
     const [
       totalProducts,
       totalUsers,
@@ -14,6 +19,12 @@ export class StatsService {
       activeAssignments,
       inventories,
       writeOffs,
+      thisMonthOpsCount,
+      lastMonthOpsCount,
+      thisMonthProductsCount,
+      lastMonthProductsCount,
+      thisMonthAssignmentsCount,
+      lastMonthAssignmentsCount,
     ] = await Promise.all([
       this.prisma.product.count({ where: { deletedAt: null } }),
       this.prisma.user.count({ where: { deletedAt: null, isActive: true } }),
@@ -30,10 +41,25 @@ export class StatsService {
           asset: true,
         },
       }),
+      this.prisma.operation.count({ where: { createdAt: { gte: thisMonthStart } } }),
+      this.prisma.operation.count({ where: { createdAt: { gte: lastMonthStart, lte: lastMonthEnd } } }),
+      this.prisma.product.count({ where: { createdAt: { gte: thisMonthStart }, deletedAt: null } }),
+      this.prisma.product.count({ where: { createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, deletedAt: null } }),
+      this.prisma.assignment.count({ where: { assignedAt: { gte: thisMonthStart }, returnedAt: null } }),
+      this.prisma.assignment.count({ where: { assignedAt: { gte: lastMonthStart, lte: lastMonthEnd }, returnedAt: null } }),
     ]);
 
+    const getPercentageChange = (current: number, previous: number) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return Number((((current - previous) / previous) * 100).toFixed(1));
+    };
+
+    const productsTrend = getPercentageChange(thisMonthProductsCount, lastMonthProductsCount);
+    const operationsTrend = getPercentageChange(thisMonthOpsCount, lastMonthOpsCount);
+    const assignmentsTrend = getPercentageChange(thisMonthAssignmentsCount, lastMonthAssignmentsCount);
+
     const lowStockCount = inventories.filter(
-      (i) => i.quantity < i.minLevel,
+      (i) => i.quantity <= i.minLevel,
     ).length;
 
     // Real-time calculation from actual quantity and unitPrice
@@ -73,6 +99,11 @@ export class StatsService {
       totalAssignedValue,
       totalWriteOffCount,
       totalWriteOffLoss,
+      trends: {
+        products: productsTrend,
+        operations: operationsTrend,
+        assignments: assignmentsTrend,
+      },
     };
   }
 

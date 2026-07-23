@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { UnitType } from '@prisma/client';
+import { UnitType, ProductType } from '@prisma/client';
 import {
   IsEnum,
   IsInt,
@@ -17,6 +17,16 @@ export class UpdateProductDto {
   @MinLength(2)
   @MaxLength(100)
   name?: string;
+
+  @ApiPropertyOptional({ example: 'PRD-001' })
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiPropertyOptional({ enum: ProductType })
+  @IsOptional()
+  @IsEnum(ProductType)
+  productType?: ProductType;
 
   @ApiPropertyOptional({ example: 2024 })
   @IsOptional()

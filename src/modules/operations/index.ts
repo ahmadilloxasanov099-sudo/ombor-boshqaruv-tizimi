@@ -1,4 +1,4 @@
-export * from './operation.controller';
-export * from './operation.service';
-export * from './operation.module';
+export * from './operations.service';
+export * from './operations.controller';
+export * from './operations.module';
 export * from './dto';

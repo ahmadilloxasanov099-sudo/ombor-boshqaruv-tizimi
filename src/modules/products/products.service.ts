@@ -9,6 +9,7 @@ import { AuditService } from 'src/common/services/audit.service';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { t } from 'src/common';
+import { ActiveUser } from 'src/common/interfaces';
 
 @Injectable()
 export class ProductsService {
@@ -17,12 +18,15 @@ export class ProductsService {
     private auditService: AuditService,
   ) {}
 
-  async findAll(query: ProductQueryDto) {
-    const { page = 1, limit = 20, search, productType } = query;
+  async findAll(query: ProductQueryDto, currentUser?: ActiveUser) {
+    const { page = 1, limit = 20, search, productType, organizationId } = query as any;
     const skip = (page - 1) * limit;
+
+    const targetOrgId = organizationId || (currentUser ? currentUser.organizationId : undefined);
 
     const where: any = {
       deletedAt: null,
+      ...(targetOrgId && { organizationId: targetOrgId }),
       ...(productType && { productType }),
       ...(search && {
         name: { contains: search, mode: 'insensitive' },
@@ -65,6 +69,19 @@ export class ProductsService {
             totalValue: true,
           },
         },
+        assets: {
+          where: { deletedAt: null },
+          include: {
+            assignments: {
+              where: { returnedAt: null },
+              include: {
+                user: { select: { id: true, fullName: true } },
+                department: { select: { id: true, name: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
         _count: {
           select: { assets: true },
         },
@@ -81,9 +98,11 @@ export class ProductsService {
   async update(id: string, dto: UpdateProductDto, updatedBy: string) {
     const oldProduct = await this.findOne(id);
 
+    const { code, ...updateData } = dto as any;
+
     const updatedProduct = await this.prisma.product.update({
       where: { id },
-      data: dto,
+      data: updateData,
       include: {
         inventory: {
           select: { quantity: true, minLevel: true, unitPrice: true },
@@ -112,25 +131,21 @@ export class ProductsService {
       throw new NotFoundException(t('errors.PRODUCT_NOT_FOUND', {}, 'Mahsulot topilmadi'));
     }
 
-    // 1. Ombordagi qoldiqni tekshirish
     if (product.inventory && product.inventory.quantity > 0) {
       throw new BadRequestException(
         t('errors.PRODUCT_IN_STOCK', {}, "Mahsulot omborda mavjud, o'chirib bo'lmaydi"),
       );
     }
 
-    // 2. Jihozlar borligini tekshirish (Faqat BERILADIGAN uchun)
     const activeAssets = await this.prisma.asset.count({
       where: { productId: id, deletedAt: null },
     });
     if (activeAssets > 0) {
-      // FIX: was `throw new Error(...)` which bypassed HttpExceptionFilter and returned 500
       throw new BadRequestException(
         t('errors.ACTIVE_ASSETS_EXIST', {}, "Mahsulotda aktiv jihozlar bor, o'chirib bo'lmaydi"),
       );
     }
 
-    // 3. Bo'limlardagi qoldiqlarni tekshirish (DepartmentAsset quantity > 0)
     const activeDeptAssets = await this.prisma.departmentAsset.aggregate({
       where: { productId: id },
       _sum: { quantity: true },
@@ -161,10 +176,6 @@ export class ProductsService {
     });
   }
 
-  /**
-   * Returns paginated operation history for a given product.
-   * FIX: Added pagination — previously returned all rows without limit.
-   */
   async getHistory(id: string, page = 1, limit = 20) {
     await this.findOne(id);
 
@@ -196,10 +207,6 @@ export class ProductsService {
     };
   }
 
-  /**
-   * Returns products where current stock < minLevel.
-   * FIX: Pushes the comparison to SQL via $queryRaw instead of loading all rows into memory.
-   */
   async getLowStock(): Promise<any[]> {
     return this.prisma.$queryRaw`
       SELECT

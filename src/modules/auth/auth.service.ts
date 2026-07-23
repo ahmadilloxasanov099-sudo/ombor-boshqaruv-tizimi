@@ -24,8 +24,11 @@ export class AuthService {
     if (!user || user.deletedAt)
       throw new UnauthorizedException("Username yoki parol noto'g'ri");
 
+    if (user.employmentStatus === 'OFFBOARDED')
+      throw new UnauthorizedException("Username yoki parol noto'g'ri");
+
     if (!user.isActive)
-      throw new UnauthorizedException('Kechirasiz siz bloklangansiz');
+      throw new UnauthorizedException("Kechirasiz siz bloklangansiz");
 
     const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
 
@@ -37,6 +40,7 @@ export class AuthService {
       user.id,
       user.username,
       user.role,
+      user.organizationId,
     );
 
     return {
@@ -48,6 +52,9 @@ export class AuthService {
         fullName: user.fullName,
         role: user.role,
         departmentId: user.departmentId,
+        organizationId: user.organizationId,
+        phone: user.phone,
+        internalPhone: user.internalPhone,
       },
     };
   }
@@ -90,6 +97,22 @@ export class AuthService {
     return { message: "Parol muvaffaqiyatli o'zgartirildi" };
   }
 
+  async verifyPassword(userId: string, password?: string) {
+    if (!password) {
+      throw new BadRequestException("Parol kiritilishi shart");
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) throw new UnauthorizedException('Foydalanuvchi topilmadi');
+
+    const match = await bcrypt.compare(password, user.passwordHash);
+    if (!match) {
+      throw new BadRequestException("Joriy parolingiz noto'g'ri");
+    }
+    return { success: true };
+  }
+
   async refresh(userId: string, refreshTokenId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId, deletedAt: null, isActive: true },
@@ -111,6 +134,7 @@ export class AuthService {
       user.id,
       user.username,
       user.role,
+      user.organizationId,
     );
 
     return {
@@ -119,7 +143,12 @@ export class AuthService {
     };
   }
 
-  async generateTokenPair(userId: string, username: string, role: string) {
+  async generateTokenPair(
+    userId: string,
+    username: string,
+    role: string,
+    organizationId?: string | null,
+  ) {
     // 1. Create a RefreshToken record in DB to get a unique ID
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiration
@@ -133,7 +162,7 @@ export class AuthService {
     });
 
     // 2. Generate tokens, include refreshTokenId (tokenId) in refresh token payload
-    const payload = { sub: userId, username, role };
+    const payload = { sub: userId, username, role, organizationId };
     const refreshPayload = { sub: userId, tokenId: refreshTokenRecord.id };
 
     const [accessToken, refreshToken] = await Promise.all([

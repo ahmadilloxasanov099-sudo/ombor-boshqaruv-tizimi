@@ -1,67 +1,85 @@
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient, UserRole, OrganizationType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seed boshlandi...');
+  console.log("Baza tozalanmoqda: faqat Admin, Omborchi va Kadr qoldirilmoqda...");
 
-  const dept = await prisma.department.upsert({
-    where: { id: 'dept-bosh' },
-    update: {},
-    create: {
-      id: 'dept-bosh',
-      name: "Bosh bo'lim",
-      description: "Boshqaruv bo'limi",
+  // Delete all data in cascade order
+  await prisma.deletionRequest.deleteMany();
+  await prisma.assignment.deleteMany();
+  await prisma.operation.deleteMany();
+  await prisma.departmentAsset.deleteMany();
+  await prisma.inventory.deleteMany();
+  await prisma.asset.deleteMany();
+  await prisma.product.deleteMany();
+  await prisma.refreshToken.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.department.deleteMany();
+  await prisma.organization.deleteMany();
+
+  console.log("Eski ma'lumotlar to'liq o'chirildi.");
+
+  // Passwords
+  const adminPasswordHash = await bcrypt.hash('axmed123', 10);
+  const omborchiPasswordHash = await bcrypt.hash('minstroy', 10);
+  const kadrPasswordHash = await bcrypt.hash('kadr123', 10);
+
+  // 1. VAZIRLIK ORGANIZATSIYASI
+  const ministry = await prisma.organization.create({
+    data: {
+      name: "O'zbekiston Respublikasi Qurilish va Uy-Joy Kommunal Xo'jaligi Vazirligi",
+      code: "MINISTRY",
+      type: OrganizationType.MINISTRY,
+      address: "Toshkent shahri, Abay ko'chasi 6",
+      phone: "+998 71 200 00 00",
     },
   });
 
-  const admin = await prisma.user.upsert({
-    where: { username: 'admin' },
-    update: {},
-    create: {
-      fullName: 'Super Admin',
-      username: 'admin',
-      passwordHash: await bcrypt.hash('admin123', 10),
-      role: UserRole.ADMIN,
-      departmentId: dept.id,
-      position: 'Administrator',
-      phone: '+998901234567',
+  // 2. ADMIN (Axmadillo Hasanov / axmed / axmed123)
+  await prisma.user.create({
+    data: {
+      fullName: 'Axmadillo Hasanov',
+      username: 'axmed',
+      passwordHash: adminPasswordHash,
+      role: UserRole.SUPER_ADMIN,
+      position: 'Bosh Administrator',
+      organizationId: ministry.id,
     },
   });
 
-  const omborchi = await prisma.user.upsert({
-    where: { username: 'omborchi' },
-    update: {},
-    create: {
-      fullName: 'Bosh Omborchi',
+  // 3. OMBORCHI (Abdulaziz Urinbadalov / omborchi / minstroy)
+  await prisma.user.create({
+    data: {
+      fullName: 'Abdulaziz Urinbadalov',
       username: 'omborchi',
-      passwordHash: await bcrypt.hash('omborchi123', 10),
-      role: UserRole.OMBORCHI,
-      departmentId: dept.id,
-      position: 'Ombor Mudiri',
-      phone: '+998901234568',
+      passwordHash: omborchiPasswordHash,
+      role: UserRole.VAZIRLIK_OMBORCHI,
+      position: 'Bosh Omborchi',
+      organizationId: ministry.id,
     },
   });
 
-  const kadr = await prisma.user.upsert({
-    where: { username: 'kadr' },
-    update: {},
-    create: {
-      fullName: 'Kadrlar Bo‘limi Xodimi',
+  // 4. KADR (Shahnoza Karimova / kadr / kadr123)
+  await prisma.user.create({
+    data: {
+      fullName: 'Shahnoza Karimova',
       username: 'kadr',
-      passwordHash: await bcrypt.hash('kadr123', 10),
+      passwordHash: kadrPasswordHash,
       role: UserRole.KADR,
-      departmentId: dept.id,
-      position: 'Kadrlar bo‘yicha mutaxassis',
-      phone: '+998901234569',
+      position: 'Kadrlar bo\'limi mas\'uli',
+      organizationId: ministry.id,
     },
   });
 
-  console.log('✅ Barcha default foydalanuvchilar yaratildi:');
-  console.log('  - username: admin (parol: admin123)');
-  console.log('  - username: omborchi (parol: omborchi123)');
-  console.log('  - username: kadr (parol: kadr123)');
+  console.log('====================================================');
+  console.log('  SEED MUVAFFAQIYATLI BAJARILDI');
+  console.log('  Admin:    axmed / axmed123');
+  console.log('  Omborchi: omborchi / minstroy');
+  console.log('  Kadr:     kadr / kadr123');
+  console.log('====================================================');
 }
 
 main()
